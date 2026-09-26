@@ -337,6 +337,32 @@ elif menu == "Gestion des Logements":
         st.session_state.logements = edited_parc["Logement"].tolist()
         sauvegarder_donnees()
 
+    st.divider()
+    st.subheader("🗑️ Supprimer un logement")
+    if len(st.session_state.logements) > 0:
+        logement_a_supprimer = st.selectbox("Sélectionner le logement à supprimer", st.session_state.logements, key="select_suppr_logement")
+        if st.button("Supprimer ce logement"):
+            # Supprimer du DataFrame du parc
+            st.session_state.parc_logements = st.session_state.parc_logements[
+                st.session_state.parc_logements["Logement"] != logement_a_supprimer
+            ].reset_index(drop=True)
+            
+            # Supprimer de la liste globale des logements
+            if logement_a_supprimer in st.session_state.logements:
+                st.session_state.logements.remove(logement_a_supprimer)
+                
+            # Supprimer également du tableau des loyers si présent
+            if "Logement" in st.session_state.loyers.columns:
+                st.session_state.loyers = st.session_state.loyers[
+                    st.session_state.loyers["Logement"] != logement_a_supprimer
+                ].reset_index(drop=True)
+
+            sauvegarder_donnees()
+            st.success(f"Le logement '{logement_a_supprimer}' a été supprimé avec succès.")
+            st.rerun()
+    else:
+        st.info("Aucun logement à supprimer.")
+
 
 # ==========================================
 # 3. SUIVI DES LOYERS & QUITTANCES
