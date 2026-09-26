@@ -325,20 +325,20 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.multi_cell(0, 3.5, txt="EN CAS DE CONGE OU SI L'INTERESSE N'A PAS LA QUALITE DE LOCATAIRE LE PRESENT REÇU NE CONSTITUE PAS UNE QUITTANCE DE LOYER MAIS UN SIMPLE REÇU D'INDEMNITE D'OCCUPATION", align="C")
             pdf.ln(6)
 
-            # Détails du terme
+            # Détails du terme (Utilisation de "EUR" pour éviter l'erreur d'encodage)
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(0, 5, txt="DÉTAILS DU TERME", ln=True)
             pdf.set_font("Arial", size=9)
             
             pdf.cell(130, 5, txt="Loyer", border=0)
-            pdf.cell(60, 5, txt=f"{loyer_hc:.2f} €", border=0, align="R", ln=True)
+            pdf.cell(60, 5, txt=f"{loyer_hc:.2f} EUR", border=0, align="R", ln=True)
             
             pdf.cell(130, 5, txt="Charges", border=0)
-            pdf.cell(60, 5, txt=f"{charges:.2f} €", border=0, align="R", ln=True)
+            pdf.cell(60, 5, txt=f"{charges:.2f} EUR", border=0, align="R", ln=True)
 
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(130, 5, txt="Loyer charges comprises", border=0)
-            pdf.cell(60, 5, txt=f"{total_paye:.2f} €", border=0, align="R", ln=True)
+            pdf.cell(60, 5, txt=f"{total_paye:.2f} EUR", border=0, align="R", ln=True)
             pdf.ln(6)
 
             # Bloc Locataire / Confirmation de paiement
@@ -346,7 +346,7 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(0, 5, txt="LOCATAIRE", ln=True)
             pdf.set_font("Arial", size=9)
             pdf.cell(0, 4, txt=nom_locataire, ln=True)
-            pdf.cell(0, 4, txt=f"Locataire a payé {total_paye:.2f} € le {date_paiement_str}", ln=True)
+            pdf.cell(0, 4, txt=f"Locataire a payé {total_paye:.2f} EUR le {date_paiement_str}", ln=True)
             pdf.cell(0, 4, txt=f"Correspondant à la location du bien situé au {adresse_logement_str},", ln=True)
             pdf.cell(0, 4, txt=f"Pour la période du {date_debut} au {date_fin}", ln=True)
             pdf.ln(6)
@@ -354,7 +354,7 @@ elif menu == "Suivi des loyers & Quittances":
             # Total payé encadré
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(130, 6, txt="TOTAL PAYÉ", border=1)
-            pdf.cell(60, 6, txt=f"{total_paye:.2f} €", border=1, align="R", ln=True)
+            pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(12)
 
             # Signature
@@ -362,7 +362,8 @@ elif menu == "Suivi des loyers & Quittances":
             signataire = bailleur_nom.replace("M. ", "").replace("MME ", "").strip()
             pdf.cell(0, 4, txt=signataire, ln=True, align="R")
 
-            pdf_output = BytesIO(pdf.output(dest="S").encode("latin1"))
+            # Encodage sécurisé vers latin-1 en ignorant les erreurs de caractères non gérés
+            pdf_output = BytesIO(pdf.output(dest="S").encode("latin1", errors="ignore"))
             st.download_button(
                 label="📥 Télécharger la quittance PDF",
                 data=pdf_output,
