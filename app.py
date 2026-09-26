@@ -30,10 +30,16 @@ def charger_donnees():
     return None
 
 def sauvegarder_donnees():
-    """Sauvegarde l'état actuel de la session dans le fichier JSON local."""
+    """Sauvegarde l'état actuel de la session dans le fichier JSON local après nettoyage des dates."""
+    df_parc_save = st.session_state.parc_logements.copy()
+    if "Date entrée" in df_parc_save.columns:
+        df_parc_save["Date entrée"] = df_parc_save["Date entrée"].astype(str).replace("NaT", "").replace("None", "").replace("nan", "")
+    if "Date sortie" in df_parc_save.columns:
+        df_parc_save["Date sortie"] = df_parc_save["Date sortie"].astype(str).replace("NaT", "").replace("None", "").replace("nan", "")
+
     data = {
         "logements": st.session_state.logements,
-        "parc_logements": st.session_state.parc_logements.to_dict(orient="split"),
+        "parc_logements": df_parc_save.to_dict(orient="split"),
         "loyers": st.session_state.loyers.to_dict(orient="split"),
         "travaux": st.session_state.travaux.to_dict(orient="split"),
         "contacts": st.session_state.contacts.to_dict(orient="split"),
@@ -70,7 +76,7 @@ else:
         "Loyer HC": [600 + i * 50 for i in range(9)],
         "Charges": [50] * 9,
         "Imposition": ["Nu"] * 9,
-        "Date entrée": [date_defaut] * 9,
+        "Date entrée": [str(date_defaut)] * 9,
         "Date sortie": [None] * 9,
         "Statut": ["Actif"] * 9,
     })
@@ -87,7 +93,7 @@ else:
     st.session_state.agenda = pd.DataFrame(columns=["Date", "Logement", "Événement", "Type"])
     sauvegarder_donnees()
 
-# Nettoyage et conversion sécurisée des colonnes de dates
+# Nettoyage et conversion sécurisée des colonnes de dates pour l'affichage
 if "Date entrée" in st.session_state.parc_logements.columns:
     st.session_state.parc_logements["Date entrée"] = pd.to_datetime(st.session_state.parc_logements["Date entrée"], errors="coerce").dt.date.fillna(datetime.now().date())
 else:
