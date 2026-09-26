@@ -16,6 +16,7 @@ st.set_page_config(
 )
 
 DATA_FILE = "parc_locatif_data.json"
+SIGNATURE_FILE = "signature.png"
 
 def charger_donnees():
     """Charge les données depuis le fichier JSON local si il existe."""
@@ -384,14 +385,23 @@ elif menu == "Suivi des loyers & Quittances":
             )
             date_paiement = st.date_input("Date effective du paiement", value=datetime.now())
 
-        st.markdown("### Informations du Bailleur (Propriétaire)")
+        st.markdown("### Informations du Bailleur & Signature")
         b_col1, b_col2 = st.columns(2)
         with b_col1:
             bailleur_nom = st.text_input("Nom du bailleur", value="M. JULIEN RECHARD")
             bailleur_adresse = st.text_input("Adresse du bailleur", value="22 RUE MARCEL PAGNOL, 31700 BLAGNAC")
         with b_col2:
             bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
-            signature_texte = st.text_input("Texte de la signature (ex: Julien RECHARD ou nom de la signature)", value="Julien RECHARD")
+            
+            # Gestion du fichier de signature image
+            uploaded_sig = st.file_uploader("Télécharger votre image de signature (PNG/JPG)", type=["png", "jpg", "jpeg"])
+            if uploaded_sig is not None:
+                with open(SIGNATURE_FILE, "wb") as f:
+                    f.write(uploaded_sig.getbuffer())
+                st.success("Signature enregistrée avec succès !")
+
+        if os.path.exists(SIGNATURE_FILE):
+            st.info("✓ Image de signature active détectée pour les quittances.")
 
         if st.button("Générer la quittance PDF conforme"):
             annee, mois = map(int, current_month.split("-"))
@@ -468,14 +478,20 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(130, 6, txt="TOTAL PAYÉ", border=1)
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
-            pdf.ln(10)
+            pdf.ln(8)
 
-            # Intégration de la signature de manière identique au modèle (ex: petit libellé de style script/italique ou texte propre, suivi du nom)
-            pdf.set_font("Arial", style="I", size=9)
-            pdf.cell(0, 4, txt="Renila", ln=True, align="R") # Ligne simulant la signature manuscrite du modèle
-            pdf.ln(2)
-            pdf.set_font("Arial", style="B", size=10)
-            pdf.cell(0, 4, txt=signature_texte, ln=True, align="R")
+            # Insertion de l'image de signature si elle existe
+            if os.path.exists(SIGNATURE_FILE):
+                try:
+                    # Insertion de l'image alignée à droite (coordonnée X ~ 130, largeur ~ 50)
+                    pdf.image(SIGNATURE_FILE, x=135, y=pdf.get_y(), w=45)
+                    pdf.ln(25)
+                except Exception:
+                    pdf.set_font("Arial", style="B", size=10)
+                    pdf.cell(0, 4, txt="Julien RECHARD", ln=True, align="R")
+            else:
+                pdf.set_font("Arial", style="B", size=10)
+                pdf.cell(0, 4, txt="Julien RECHARD", ln=True, align="R")
 
             pdf_output = BytesIO(pdf.output(dest="S").encode("latin1", errors="ignore"))
             st.download_button(
@@ -677,4 +693,4 @@ elif menu == "Annuaire utiles":
             st.session_state.contacts, use_container_width=True, hide_index=True
         )
     else:
-        st.info("Souhaitez-vous ajouter d'autres éléments à votre application ?")
+        st.info("Votre annuaire est vide.")
