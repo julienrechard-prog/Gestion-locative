@@ -10,7 +10,7 @@ import streamlit as st
 # --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
     page_title="Gestion Parc Locatif",
-    page_icon="🏠",
+    page_icon="☰",
     layout="wide",
 )
 
@@ -18,14 +18,25 @@ st.set_page_config(
 if "logements" not in st.session_state:
     st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
 
+if "parc_logements" not in st.session_state:
+    st.session_state.parc_logements = pd.DataFrame({
+        "ID": [str(i) for i in range(1, 10)],
+        "Logement": st.session_state.logements,
+        "Adresse": [f"Adresse par défaut {i}" for i in range(1, 10)],
+        "Locataire": [f"Locataire {i}" for i in range(1, 10)],
+        "Loyer HC": [600 + i * 50 for i in range(9)],
+        "Charges": [50] * 9,
+        "Imposition": ["Nu"] * 9,
+    })
+
 if "loyers" not in st.session_state:
     current_month = datetime.now().strftime("%Y-%m")
     st.session_state.loyers = pd.DataFrame({
         "Logement": st.session_state.logements,
-        "Locataire": [f"Locataire {i}" for i in range(1, 10)],
-        "Loyer HC": [600 + i * 50 for i in range(9)],
-        "Charges": [50] * 9,
-        f"Statut_{current_month}": [False] * 9,
+        "Locataire": st.session_state.parc_logements["Locataire"],
+        "Loyer HC": st.session_state.parc_logements["Loyer HC"],
+        "Charges": st.session_state.parc_logements["Charges"],
+        f"Statut_{current_month}": [False] * len(st.session_state.logements),
     })
 
 if "travaux" not in st.session_state:
@@ -44,7 +55,7 @@ if "agenda" not in st.session_state:
     )
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
-st.sidebar.title("🏠 Gestion Locative")
+st.sidebar.title("☰ Gestion Locative")
 menu = st.sidebar.radio(
     "Navigation",
     [
@@ -98,7 +109,7 @@ if menu == "Tableau de bord":
     st.divider()
     st.subheader("Vue rapide du parc locatif")
     st.dataframe(
-        st.session_state.loyers, use_container_width=True, hide_index=True
+        st.session_state.parc_logements, use_container_width=True, hide_index=True
     )
 
 
@@ -110,27 +121,44 @@ elif menu == "Gestion des Logements":
 
     st.subheader("Ajouter un nouveau logement")
     with st.form("form_nouveau_logement"):
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            nouveau_nom = st.text_input("Nom / Adresse du logement (ex: T2 1er étage - Saint-Gaudens)")
-            nouveau_locataire = st.text_input("Nom du locataire (ex: Mlle Andrea Ballester)")
+            nouveau_id = st.text_input("ID du logement (ex: L01)")
+            nouveau_nom = st.text_input("Nom personnalisé (ex: T2 1er étage)")
         with col2:
+            nouvelle_adresse = st.text_input("Adresse du logement (ex: 5 Avenue du Maréchal Joffre, 31800 Saint-Gaudens)")
+            nouveau_locataire = st.text_input("Nom du locataire (ex: Mlle Andrea Ballester)")
+        with col3:
             nouveau_loyer = st.number_input("Montant Loyer HC (€)", min_value=0.0, value=440.0, step=10.0)
             nouvelles_charges = st.number_input("Montant Charges (€)", min_value=0.0, value=10.0, step=5.0)
+
+        nouvelle_imposition = st.selectbox("Imposition", ["Nu", "Meublé", "Airbnb"])
 
         submit_logement = st.form_submit_button("Créer et ajouter au parc")
 
         if submit_logement:
-            if not nouveau_nom.strip():
-                st.error("Le nom du logement ne peut pas être vide.")
+            if not nouveau_id.strip() or not nouveau_nom.strip():
+                st.error("L'ID et le Nom du logement ne peuvent pas être vides.")
             elif nouveau_nom in st.session_state.logements:
                 st.error("Ce nom de logement existe déjà.")
             else:
                 st.session_state.logements.append(nouveau_nom)
+
+                new_parc_row = pd.DataFrame([{
+                    "ID": nouveau_id,
+                    "Logement": nouveau_nom,
+                    "Adresse": nouvelle_adresse,
+                    "Locataire": nouveau_locataire,
+                    "Loyer HC": nouveau_loyer,
+                    "Charges": nouvelles_charges,
+                    "Imposition": nouvelle_imposition,
+                }])
+                st.session_state.parc_logements = pd.concat([st.session_state.parc_logements, new_parc_row], ignore_index=True)
+
                 current_month = datetime.now().strftime("%Y-%m")
                 col_statut = f"Statut_{current_month}"
                 
-                new_row_data = {
+                new_loyer_row_data = {
                     "Logement": nouveau_nom,
                     "Locataire": nouveau_locataire,
                     "Loyer HC": nouveau_loyer,
@@ -138,31 +166,38 @@ elif menu == "Gestion des Logements":
                 }
                 for col in st.session_state.loyers.columns:
                     if col.startswith("Statut_"):
-                        new_row_data[col] = False
+                        new_loyer_row_data[col] = False
 
-                if col_statut not in new_row_data:
-                    new_row_data[col_statut] = False
+                if col_statut not in new_loyer_row_data:
+                    new_loyer_row_data[col_statut] = False
 
-                new_row_df = pd.DataFrame([new_row_data])
-                st.session_state.loyers = pd.concat([st.session_state.loyers, new_row_df], ignore_index=True)
+                new_loyer_df = pd.DataFrame([new_loyer_row_data])
+                st.session_state.loyers = pd.concat([st.session_state.loyers, new_loyer_df], ignore_index=True)
                 
                 st.success(f"Le logement '{nouveau_nom}' a été créé avec succès !")
                 st.rerun()
 
     st.divider()
     st.subheader("Liste et modification des logements existants")
-    st.info("Vous pouvez modifier directement les informations (Locataire, Loyer HC, Charges) dans le tableau ci-dessous.")
+    st.info("Vous pouvez modifier directement les informations dans le tableau ci-dessous.")
 
     edited_parc = st.data_editor(
-        st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges"]],
+        st.session_state.parc_logements,
         use_container_width=True,
         hide_index=True,
-        key="editor_parc"
+        key="editor_parc_complet"
     )
 
-    st.session_state.loyers["Locataire"] = edited_parc["Locataire"]
-    st.session_state.loyers["Loyer HC"] = edited_parc["Loyer HC"]
-    st.session_state.loyers["Charges"] = edited_parc["Charges"]
+    st.session_state.parc_logements = edited_parc
+    st.session_state.logements = edited_parc["Logement"].tolist()
+    
+    for idx, row in edited_parc.iterrows():
+        log_name = row["Logement"]
+        mask = st.session_state.loyers["Logement"] == log_name
+        if mask.any():
+            st.session_state.loyers.loc[mask, "Locataire"] = row["Locataire"]
+            st.session_state.loyers.loc[mask, "Loyer HC"] = row["Loyer HC"]
+            st.session_state.loyers.loc[mask, "Charges"] = row["Charges"]
 
 
 # ==========================================
@@ -199,7 +234,7 @@ elif menu == "Suivi des loyers & Quittances":
     st.session_state.loyers[col_statut] = edited_loyers[col_statut]
 
     st.divider()
-    st.subheader("📄 Génération de Quittance de Loyer (PDF formaté)")
+    st.subheader("📄 Génération de Quittance de Loyer (Modèle F fidèle)")
 
     if len(st.session_state.logements) == 0:
         st.warning("Aucun logement disponible. Veuillez en créer un dans l'onglet 'Gestion des Logements'.")
@@ -209,21 +244,23 @@ elif menu == "Suivi des loyers & Quittances":
             selected_logement = st.selectbox(
                 "Choisir le logement", st.session_state.logements
             )
-            locataire_info = st.session_state.loyers.loc[
-                st.session_state.loyers["Logement"] == selected_logement
+            
+            parc_info = st.session_state.parc_logements.loc[
+                st.session_state.parc_logements["Logement"] == selected_logement
             ].iloc[0]
+            
             nom_locataire = st.text_input(
-                "Nom du locataire", value=locataire_info["Locataire"]
+                "Nom du locataire", value=parc_info["Locataire"]
             )
-            adresse_locataire = st.text_input(
-                "Adresse complète du locataire", value="5 Avenue du Maréchal Joffre, 31800 Saint-Gaudens"
+            adresse_logement_str = st.text_input(
+                "Adresse du bien", value=parc_info["Adresse"]
             )
         with col_q2:
             loyer_hc = st.number_input(
-                "Montant Hors Charges (€)", value=float(locataire_info["Loyer HC"])
+                "Montant Hors Charges (€)", value=float(parc_info["Loyer HC"])
             )
             charges = st.number_input(
-                "Charges (€)", value=float(locataire_info["Charges"])
+                "Charges (€)", value=float(parc_info["Charges"])
             )
             date_paiement = st.date_input("Date effective du paiement", value=datetime.now())
 
@@ -235,7 +272,7 @@ elif menu == "Suivi des loyers & Quittances":
         with b_col2:
             bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
 
-        if st.button("Générer la quittance PDF personnalisée"):
+        if st.button("Générer la quittance PDF conforme"):
             annee, mois = map(int, current_month.split("-"))
             dernier_jour = calendar.monthrange(annee, mois)[1]
             date_debut = f"01/{mois:02d}/{annee}"
@@ -253,65 +290,77 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.add_page()
             pdf.set_font("Arial", size=10)
 
-            pdf.cell(10, 5, txt="DE", ln=True)
+            # DE (Bailleur)
+            pdf.cell(0, 5, txt="DE", ln=True)
             pdf.set_font("Arial", style="B", size=10)
             pdf.cell(0, 5, txt=bailleur_nom, ln=True)
             pdf.set_font("Arial", size=10)
             pdf.cell(0, 5, txt=bailleur_adresse, ln=True)
+            pdf.cell(0, 5, txt="FRANCE", ln=True)
             pdf.cell(0, 5, txt=bailleur_tel, ln=True)
             pdf.ln(5)
 
-            pdf.cell(10, 5, txt="A", ln=True)
+            # A (Locataire)
+            pdf.cell(0, 5, txt="A", ln=True)
             pdf.set_font("Arial", style="B", size=10)
             pdf.cell(0, 5, txt=nom_locataire, ln=True)
             pdf.set_font("Arial", size=10)
-            pdf.cell(0, 5, txt=adresse_locataire, ln=True)
-            pdf.ln(10)
-
-            pdf.set_font("Arial", size=9)
-            pdf.cell(0, 5, txt=f"Date : {date_paiement_str}", ln=True, align="R")
-            pdf.cell(0, 5, txt=f"Période : {date_debut}-{date_fin}", ln=True, align="R")
+            pdf.cell(0, 5, txt=adresse_logement_str, ln=True)
+            pdf.cell(0, 5, txt="FRANCE", ln=True)
+            pdf.cell(0, 5, txt="Locataire", ln=True)
             pdf.ln(5)
 
-            pdf.set_font("Arial", style="B", size=12)
-            pdf.cell(0, 10, txt=titre_mois_str, ln=True, align="C")
+            # Date & Période
+            pdf.cell(0, 5, txt=f"Date {date_paiement_str}", ln=True)
+            pdf.cell(0, 5, txt=f"Période {date_debut}-{date_fin}", ln=True)
+            pdf.ln(4)
+
+            # Titre Quittance
+            pdf.set_font("Arial", style="B", size=11)
+            pdf.cell(0, 8, txt=titre_mois_str, ln=True, align="C")
             pdf.ln(2)
 
-            pdf.set_font("Arial", size=7)
-            pdf.multi_cell(0, 4, txt="EN CAS DE CONGE OU SI L'INTERESSE N'A PAS LA QUALITE DE LOCATAIRE LE PRESENT REÇU NE CONSTITUE PAS UNE QUITTANCE DE LOYER MAIS UN SIMPLE REÇU D'INDEMNITE D'OCCUPATION", align="C")
-            pdf.ln(8)
+            # Mention légale conforme au modèle
+            pdf.set_font("Arial", size=6)
+            pdf.multi_cell(0, 3.5, txt="EN CAS DE CONGE OU SI L'INTERESSE N'A PAS LA QUALITE DE LOCATAIRE LE PRESENT REÇU NE CONSTITUE PAS UNE QUITTANCE DE LOYER MAIS UN SIMPLE REÇU D'INDEMNITE D'OCCUPATION", align="C")
+            pdf.ln(6)
 
-            pdf.set_font("Arial", style="B", size=10)
-            pdf.cell(0, 6, txt="DÉTAILS DU TERME", ln=True)
-            pdf.set_font("Arial", size=10)
+            # Détails du terme
+            pdf.set_font("Arial", style="B", size=9)
+            pdf.cell(0, 5, txt="DÉTAILS DU TERME", ln=True)
+            pdf.set_font("Arial", size=9)
             
-            pdf.cell(140, 6, txt="Loyer", border=0)
-            pdf.cell(50, 6, txt=f"{loyer_hc:.2f} EUR", border=0, align="R", ln=True)
+            pdf.cell(130, 5, txt="Loyer", border=0)
+            pdf.cell(60, 5, txt=f"{loyer_hc:.2f} €", border=0, align="R", ln=True)
             
-            pdf.cell(140, 6, txt="Charges", border=0)
-            pdf.cell(50, 6, txt=f"{charges:.2f} EUR", border=0, align="R", ln=True)
+            pdf.cell(130, 5, txt="Charges", border=0)
+            pdf.cell(60, 5, txt=f"{charges:.2f} €", border=0, align="R", ln=True)
 
-            pdf.set_font("Arial", style="B", size=10)
-            pdf.cell(140, 6, txt="Loyer charges comprises", border=0)
-            pdf.cell(50, 6, txt=f"{total_paye:.2f} EUR", border=0, align="R", ln=True)
-            pdf.ln(8)
+            pdf.set_font("Arial", style="B", size=9)
+            pdf.cell(130, 5, txt="Loyer charges comprises", border=0)
+            pdf.cell(60, 5, txt=f"{total_paye:.2f} €", border=0, align="R", ln=True)
+            pdf.ln(6)
 
-            pdf.set_font("Arial", style="B", size=10)
-            pdf.cell(0, 6, txt="LOCATAIRE", ln=True)
-            pdf.set_font("Arial", size=10)
-            pdf.cell(0, 5, txt=nom_locataire, ln=True)
-            pdf.cell(0, 5, txt=f"Locataire a payé {total_paye:.2f} EUR le {date_paiement_str}", ln=True)
-            pdf.cell(0, 5, txt=f"Correspondant à la location du bien situé au {selected_logement}", ln=True)
-            pdf.cell(0, 5, txt=f"Pour la période du {date_debut} au {date_fin}", ln=True)
-            pdf.ln(8)
+            # Bloc Locataire / Confirmation de paiement
+            pdf.set_font("Arial", style="B", size=9)
+            pdf.cell(0, 5, txt="LOCATAIRE", ln=True)
+            pdf.set_font("Arial", size=9)
+            pdf.cell(0, 4, txt=nom_locataire, ln=True)
+            pdf.cell(0, 4, txt=f"Locataire a payé {total_paye:.2f} € le {date_paiement_str}", ln=True)
+            pdf.cell(0, 4, txt=f"Correspondant à la location du bien situé au {adresse_logement_str},", ln=True)
+            pdf.cell(0, 4, txt=f"Pour la période du {date_debut} au {date_fin}", ln=True)
+            pdf.ln(6)
 
-            pdf.set_font("Arial", style="B", size=11)
-            pdf.cell(140, 8, txt="TOTAL PAYÉ", border=1)
-            pdf.cell(50, 8, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
-            pdf.ln(15)
+            # Total payé encadré
+            pdf.set_font("Arial", style="B", size=9)
+            pdf.cell(130, 6, txt="TOTAL PAYÉ", border=1)
+            pdf.cell(60, 6, txt=f"{total_paye:.2f} €", border=1, align="R", ln=True)
+            pdf.ln(12)
 
-            pdf.set_font("Arial", size=10)
-            pdf.cell(0, 5, txt=bailleur_nom.replace("M. ", "").replace("MME ", ""), ln=True, align="R")
+            # Signature
+            pdf.set_font("Arial", size=9)
+            signataire = bailleur_nom.replace("M. ", "").replace("MME ", "").strip()
+            pdf.cell(0, 4, txt=signataire, ln=True, align="R")
 
             pdf_output = BytesIO(pdf.output(dest="S").encode("latin1"))
             st.download_button(
@@ -406,7 +455,7 @@ elif menu == "Documents & États des lieux":
 
 
 # ==========================================
-# 6. AGENDA (AVEC LIENS GOOGLE AGENDA)
+# 6. AGENDA
 # ==========================================
 elif menu == "Agenda":
     st.title("📅 Agenda des Événements & Google Agenda")
@@ -446,7 +495,6 @@ elif menu == "Agenda":
     if not st.session_state.agenda.empty:
         st.subheader("Liste de vos événements")
         
-        # Tri par date
         agenda_df = st.session_state.agenda.sort_values(by="Date")
         
         for idx, row in agenda_df.iterrows():
@@ -459,7 +507,6 @@ elif menu == "Agenda":
                     st.markdown(f"**Type :** {row['Type']}")
                     st.markdown(f"**Intitulé :** {row['Événement']}")
                 with c3:
-                    # Génération du lien Google Agenda au format Web
                     d = datetime.strptime(row['Date'], "%Y-%m-%d")
                     d_end = d + timedelta(days=1)
                     dates_fmt = f"{d.strftime('%Y%m%d')}/{d_end.strftime('%Y%m%d')}"
