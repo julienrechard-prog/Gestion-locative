@@ -18,6 +18,17 @@ st.set_page_config(
 DATA_FILE = "parc_locatif_data.json"
 SIGNATURE_FILE = "signature.png"
 
+def charger_donnees():
+    """Charge les données depuis le fichier JSON local si il existe."""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data
+        except Exception:
+            return None
+    return None
+
 def sauvegarder_donnees():
     """Sauvegarde l'état actuel de la session dans le fichier JSON local."""
     data = {
@@ -30,17 +41,6 @@ def sauvegarder_donnees():
     }
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
-
-def charger_donnees():
-    """Charge les données depuis le fichier JSON local si il existe."""
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data
-        except Exception:
-            return None
-    return None
 
 # --- INITIALISATION DES DONNÉES EN SESSION AVEC PERSISTANCE ---
 saved_data = charger_donnees()
@@ -71,7 +71,7 @@ else:
         "Charges": [50] * 9,
         "Imposition": ["Nu"] * 9,
         "Date entrée": [date_defaut] * 9,
-        "Date sortie": [""] * 9,
+        "Date sortie": [None] * 9,
         "Statut": ["Actif"] * 9,
     })
     current_month = datetime.now().strftime("%Y-%m")
@@ -87,14 +87,13 @@ else:
     st.session_state.agenda = pd.DataFrame(columns=["Date", "Logement", "Événement", "Type"])
     sauvegarder_donnees()
 
-# --- VÉRIFICATION ET MISE À JOUR DES COLONNES MANQUANTES ---
+# S'assurer que les dates sont bien gérées au format date/string propre
 for col_manquante in ["Date entrée", "Date sortie", "Statut"]:
     if col_manquante not in st.session_state.parc_logements.columns:
         if col_manquante == "Statut":
             st.session_state.parc_logements[col_manquante] = "Actif"
         else:
-            st.session_state.parc_logements[col_manquante] = ""
-sauvegarder_donnees()
+            st.session_state.parc_logements[col_manquante] = None
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
 st.sidebar.title("☰ Gestion Locative")
@@ -219,12 +218,12 @@ if menu == "Tableau de bord":
         d_sortie_str = str(row.get("Date sortie", "")).strip()
         
         try:
-            d_entree = datetime.strptime(d_entree_str, "%Y-%m-%d").date()
+            d_entree = pd.to_datetime(d_entree_str).date() if d_entree_str and d_entree_str.lower() != "nan" else None
         except Exception:
             d_entree = None
             
         try:
-            d_sortie = datetime.strptime(d_sortie_str, "%Y-%m-%d").date() if d_sortie_str and d_sortie_str.lower() != "nan" and d_sortie_str != "" else None
+            d_sortie = pd.to_datetime(d_sortie_str).date() if d_sortie_str and d_sortie_str.lower() != "nan" and d_sortie_str != "" and d_sortie_str.lower() != "nat" else None
         except Exception:
             d_sortie = None
             
@@ -282,7 +281,7 @@ elif menu == "Gestion des Logements":
             else:
                 st.session_state.logements.append(nouveau_nom)
 
-                d_sortie_str = str(date_sortie) if has_sortie and date_sortie else ""
+                d_sortie_str = str(date_sortie) if has_sortie and date_sortie else None
                 statut_val = "Inactif" if d_sortie_str else "Actif"
 
                 new_parc_row = pd.DataFrame([{
@@ -305,23 +304,33 @@ elif menu == "Gestion des Logements":
 
     st.divider()
     st.subheader("Liste et modification des logements existants")
-    st.info("Faites défiler le tableau vers la droite pour voir et modifier les colonnes 'Date entrée', 'Date sortie' et 'Statut'.")
+    st.info("Cliquez sur les colonnes de dates pour ouvrir le calendrier interactif et modifier les informations directement.")
 
+    # Utilisation de st.column_config.DateColumn pour afficher un vrai calendrier interactif dans le tableau
     edited_parc = st.data_editor(
         st.session_state.parc_logements,
         use_container_width=True,
         hide_index=True,
-        key="editor_parc_complet"
+        key="editor_parc_complet",
+        column_config={
+            "Date entrée": st.column_config.DateColumn("Date entrée", format="YYYY-MM-DD"),
+            "Date sortie": st.column_config.DateColumn("Date sortie", format="YYYY-MM-DD"),
+        }
     )
 
     if not edited_parc.equals(st.session_state.parc_logements):
         for idx, row in edited_parc.iterrows():
-            d_sortie = str(row.get("Date sortie", "")).strip()
-            if d_sortie and d_sortie.lower() != "nan" and d_sortie != "":
+            d_sortie = row.get("Date sortie")
+            if pd.notna(d_sortie) and str(d_sortie).strip() != "" and str(d_sortie).lower() != "nat":
                 edited_parc.loc[idx, "Statut"] = "Inactif"
+                edited_parc.loc[idx, "Date sortie"] = str(pd.to_datetime(d_sortie).date())
             else:
                 edited_parc.loc[idx, "Statut"] = "Actif"
-                edited_parc.loc[idx, "Date sortie"] = ""
+                edited_parc.loc[idx, "Date sortie"] = None
+
+            d_entree = row.get("Date entrée")
+            if pd.notna(d_entree):
+                edited_parc.loc[idx, "Date entrée"] = str(pd.to_datetime(d_entree).date())
 
         st.session_state.parc_logements = edited_parc
         st.session_state.logements = edited_parc["Logement"].tolist()
