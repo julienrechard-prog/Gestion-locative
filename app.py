@@ -1,48 +1,47 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
+import calendar
+import urllib.parse
 import os
 import pandas as pd
 from fpdf import FPDF
 import streamlit as st
 
-# Configuration de la page
+# --- CONFIGURATION DE LA PAGE ---
 st.set_page_config(
-    page_title="Gestion Parc Locatif (9 Logements)",
+    page_title="Gestion Parc Locatif",
     page_icon="🏠",
     layout="wide",
 )
 
 # --- INITIALISATION DES DONNÉES EN SESSION ---
 if "logements" not in st.session_state:
-  st.session_state.logements = [
-      f"Logement {i}" for i in range(1, 10)
-  ] # Vos 9 logements
+    st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
 
 if "loyers" not in st.session_state:
-  # État des loyers par défaut (Mois en cours)
-  current_month = datetime.now().strftime("%Y-%m")
-  st.session_state.loyers = pd.DataFrame({
-      "Logement": st.session_state.logements,
-      "Locataire": [f"Locataire {i}" for i in range(1, 10)],
-      "Loyer HC": [600 + i * 50 for i in range(9)],
-      "Charges": [50] * 9,
-      f"Statut_{current_month}": [False] * 9,
-  })
+    current_month = datetime.now().strftime("%Y-%m")
+    st.session_state.loyers = pd.DataFrame({
+        "Logement": st.session_state.logements,
+        "Locataire": [f"Locataire {i}" for i in range(1, 10)],
+        "Loyer HC": [600 + i * 50 for i in range(9)],
+        "Charges": [50] * 9,
+        f"Statut_{current_month}": [False] * 9,
+    })
 
 if "travaux" not in st.session_state:
-  st.session_state.travaux = pd.DataFrame(
-      columns=["Logement", "Date", "Titre", "Description", "Statut"]
-  )
+    st.session_state.travaux = pd.DataFrame(
+        columns=["Logement", "Date", "Titre", "Description", "Statut"]
+    )
 
 if "contacts" not in st.session_state:
-  st.session_state.contacts = pd.DataFrame(
-      columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"]
-  )
+    st.session_state.contacts = pd.DataFrame(
+        columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"]
+    )
 
 if "agenda" not in st.session_state:
-  st.session_state.agenda = pd.DataFrame(
-      columns=["Date", "Logement", "Événement", "Type"]
-  )
+    st.session_state.agenda = pd.DataFrame(
+        columns=["Date", "Logement", "Événement", "Type"]
+    )
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
 st.sidebar.title("🏠 Gestion Locative")
@@ -50,6 +49,7 @@ menu = st.sidebar.radio(
     "Navigation",
     [
         "Tableau de bord",
+        "Gestion des Logements",
         "Suivi des loyers & Quittances",
         "Travaux & Suivi",
         "Documents & États des lieux",
@@ -58,314 +58,458 @@ menu = st.sidebar.radio(
     ],
 )
 
+
 # ==========================================
 # 1. TABLEAU DE BORD
 # ==========================================
 if menu == "Tableau de bord":
-  st.title("📊 Tableau de Bord")
+    st.title("📊 Tableau de Bord")
 
-  col1, col2, col3 = st.columns(3)
-  with col1:
-    st.metric("Total Logements", len(st.session_state.logements))
-  with col2:
+    total_logements = len(st.session_state.logements)
     current_month = datetime.now().strftime("%Y-%m")
+    
+    col_statut = f"Statut_{current_month}"
+    if col_statut not in st.session_state.loyers.columns:
+        st.session_state.loyers[col_statut] = False
+
     payés = (
-        st.session_state.loyers[f"Statut_{current_month}"]
+        st.session_state.loyers[col_statut]
         .value_counts()
         .get(True, 0)
     )
-    st.metric(
-        f"Loyers perçus ({current_month})", f"{payés} / 9", f"{payés*100//9}%"
-    )
-  with col3:
-    en_cours = len(
-        st.session_state.travaux[
-            st.session_state.travaux["Statut"] == "En cours"
-        ]
-    )
-    st.metric("Travaux en cours", en_cours)
+    
+    pourcentage = int(payés * 100 / total_logements) if total_logements > 0 else 0
 
-  st.divider()
-  st.subheader("Vue rapide des 9 logements")
-  st.dataframe(
-      st.session_state.loyers, use_container_width=True, hide_index=True
-  )
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total Logements", total_logements)
+    with col2:
+        st.metric(
+            f"Loyers perçus ({current_month})", f"{payés} / {total_logements}", f"{pourcentage}%"
+        )
+    with col3:
+        en_cours = len(
+            st.session_state.travaux[
+                st.session_state.travaux["Statut"] == "En cours"
+            ]
+        )
+        st.metric("Travaux en cours", en_cours)
+
+    st.divider()
+    st.subheader("Vue rapide du parc locatif")
+    st.dataframe(
+        st.session_state.loyers, use_container_width=True, hide_index=True
+    )
+
 
 # ==========================================
-# 2. SUIVI DES LOYERS & QUITTANCES
+# 2. GESTION DES LOGEMENTS
+# ==========================================
+elif menu == "Gestion des Logements":
+    st.title("🏢 Fiches Logements & Paramétrage")
+
+    st.subheader("Ajouter un nouveau logement")
+    with st.form("form_nouveau_logement"):
+        col1, col2 = st.columns(2)
+        with col1:
+            nouveau_nom = st.text_input("Nom / Adresse du logement (ex: T2 1er étage - Saint-Gaudens)")
+            nouveau_locataire = st.text_input("Nom du locataire (ex: Mlle Andrea Ballester)")
+        with col2:
+            nouveau_loyer = st.number_input("Montant Loyer HC (€)", min_value=0.0, value=440.0, step=10.0)
+            nouvelles_charges = st.number_input("Montant Charges (€)", min_value=0.0, value=10.0, step=5.0)
+
+        submit_logement = st.form_submit_button("Créer et ajouter au parc")
+
+        if submit_logement:
+            if not nouveau_nom.strip():
+                st.error("Le nom du logement ne peut pas être vide.")
+            elif nouveau_nom in st.session_state.logements:
+                st.error("Ce nom de logement existe déjà.")
+            else:
+                st.session_state.logements.append(nouveau_nom)
+                current_month = datetime.now().strftime("%Y-%m")
+                col_statut = f"Statut_{current_month}"
+                
+                new_row_data = {
+                    "Logement": nouveau_nom,
+                    "Locataire": nouveau_locataire,
+                    "Loyer HC": nouveau_loyer,
+                    "Charges": nouvelles_charges,
+                }
+                for col in st.session_state.loyers.columns:
+                    if col.startswith("Statut_"):
+                        new_row_data[col] = False
+
+                if col_statut not in new_row_data:
+                    new_row_data[col_statut] = False
+
+                new_row_df = pd.DataFrame([new_row_data])
+                st.session_state.loyers = pd.concat([st.session_state.loyers, new_row_df], ignore_index=True)
+                
+                st.success(f"Le logement '{nouveau_nom}' a été créé avec succès !")
+                st.rerun()
+
+    st.divider()
+    st.subheader("Liste et modification des logements existants")
+    st.info("Vous pouvez modifier directement les informations (Locataire, Loyer HC, Charges) dans le tableau ci-dessous.")
+
+    edited_parc = st.data_editor(
+        st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges"]],
+        use_container_width=True,
+        hide_index=True,
+        key="editor_parc"
+    )
+
+    st.session_state.loyers["Locataire"] = edited_parc["Locataire"]
+    st.session_state.loyers["Loyer HC"] = edited_parc["Loyer HC"]
+    st.session_state.loyers["Charges"] = edited_parc["Charges"]
+
+
+# ==========================================
+# 3. SUIVI DES LOYERS & QUITTANCES
 # ==========================================
 elif menu == "Suivi des loyers & Quittances":
-  st.title("💶 Suivi des Loyers & Génération de Quittances")
+    st.title("💶 Suivi des Loyers & Génération de Quittances")
 
-  current_month = st.selectbox(
-      "Sélectionner le mois",
-      [
-          "2026-09",
-          "2026-08",
-          "2026-07",
-          "2026-06",
-          "2026-05",
-          "2026-04",
-          "2026-03",
-          "2026-02",
-          "2026-01",
-      ],
-  )
-
-  # S'assurer que la colonne du mois existe
-  col_statut = f"Statut_{current_month}"
-  if col_statut not in st.session_state.loyers.columns:
-    st.session_state.loyers[col_statut] = False
-
-  st.subheader("État des encaissements")
-  edited_loyers = st.data_editor(
-      st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges", col_statut]],
-      use_container_width=True,
-      hide_index=True,
-  )
-  st.session_state.loyers[col_statut] = edited_loyers[col_statut]
-
-  st.divider()
-  st.subheader("📄 Génération de Quittance de Loyer (PDF)")
-
-  col_q1, col_q2 = st.columns(2)
-  with col_q1:
-    selected_logement = st.selectbox(
-        "Choisir le logement", st.session_state.logements
-    )
-    locataire_info = st.session_state.loyers.loc[
-        st.session_state.loyers["Logement"] == selected_logement
-    ].iloc[0]
-    nom_locataire = st.text_input(
-        "Nom du locataire", value=locataire_info["Locataire"]
-    )
-  with col_q2:
-    loyer_hc = st.number_input(
-        "Montant Hors Charges (€)", value=float(locataire_info["Loyer HC"])
-    )
-    charges = st.number_input(
-        "Charges (€)", value=float(locataire_info["Charges"])
+    current_month = st.selectbox(
+        "Sélectionner le mois",
+        [
+            "2026-09",
+            "2026-08",
+            "2026-07",
+            "2026-06",
+            "2026-05",
+            "2026-04",
+            "2026-03",
+            "2026-02",
+            "2026-01",
+        ],
     )
 
-  if st.button("Générer la quittance PDF"):
-    # Création du PDF basique
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Arial", size=12)
-    pdf.cell(
-        200, 10, txt="QUITTANCE DE LOYER", ln=True, align="C"
-    )
-    pdf.ln(10)
-    pdf.cell(
-        200,
-        10,
-        txt=f"Mois : {current_month}",
-        ln=True,
-    )
-    pdf.cell(
-        200,
-        10,
-        txt=f"Logement : {selected_logement}",
-        ln=True,
-    )
-    pdf.cell(
-        200,
-        10,
-        txt=f"Locataire : {nom_locataire}",
-        ln=True,
-    )
-    pdf.ln(10)
-    pdf.cell(
-        200,
-        10,
-        txt=f"Loyer Hors Charges : {loyer_hc:.2f} EUR",
-        ln=True,
-    )
-    pdf.cell(
-        200,
-        10,
-        txt=f"Provisions pour charges : {charges:.2f} EUR",
-        ln=True,
-    )
-    pdf.cell(
-        200,
-        10,
-        txt=f"Total payé : {loyer_hc + charges:.2f} EUR",
-        ln=True,
-    )
-    pdf.ln(20)
-    pdf.cell(
-        200,
-        10,
-        txt="Quittance générée automatiquement par votre application web.",
-        ln=True,
-    )
+    col_statut = f"Statut_{current_month}"
+    if col_statut not in st.session_state.loyers.columns:
+        st.session_state.loyers[col_statut] = False
 
-    pdf_output = BytesIO(pdf.output(dest="S").encode("latin1"))
-    st.download_button(
-        label="📥 Télécharger la quittance (PDF)",
-        data=pdf_output,
-        file_name=f"quittance_{selected_logement}_{current_month}.pdf",
-        mime="application/pdf",
-    )
-
-# ==========================================
-# 3. TRAVAUX & SUIVI
-# ==========================================
-elif menu == "Travaux & Suivi":
-  st.title("🛠️ Suivi des Travaux et Interventions")
-
-  with st.form("form_travaux"):
-    col1, col2 = st.columns(2)
-    with col1:
-      logement = st.selectbox("Logement concerné", st.session_state.logements)
-      titre = st.text_input("Titre de l'intervention (ex: Fuite chauffe-eau)")
-    with col2:
-      statut = st.selectbox("Statut", ["À planifier", "En cours", "Terminé"])
-      date_travaux = st.date_input("Date")
-
-    description = st.text_area("Notes textuelles / Détails")
-    photo = st.file_uploader(
-        "Ajouter une photo justificative", type=["jpg", "png", "jpeg"]
-    )
-
-    submitted = st.form_submit_button("Ajouter l'intervention")
-    if submitted:
-      new_row = pd.DataFrame({
-          "Logement": [logement],
-          "Date": [str(date_travaux)],
-          "Titre": [titre],
-          "Description": [description],
-          "Statut": [statut],
-      })
-      st.session_state.travaux = pd.concat(
-          [st.session_state.travaux, new_row], ignore_index=True
-      )
-      st.success("Intervention enregistrée avec succès !")
-
-  st.subheader("Historique des travaux")
-  if not st.session_state.travaux.empty:
-    st.dataframe(
-        st.session_state.travaux, use_container_width=True, hide_index=True
-    )
-  else:
-    st.info("Aucun travail enregistré pour le moment.")
-
-# ==========================================
-# 4. DOCUMENTS & ÉTATS DES LIEUX
-# ==========================================
-elif menu == "Documents & États des lieux":
-  st.title("📂 Gestion des Documents & États des Lieux")
-
-  selected_logement = st.selectbox(
-      "Sélectionner le logement pour voir/ajouter des pièces",
-      st.session_state.logements,
-  )
-
-  doc_type = st.selectbox(
-      "Type de document",
-      [
-          "État des lieux d'entrée",
-          "État des lieux de sortie",
-          "Bail de location",
-          "Pièce d'identité / Autre",
-      ],
-  )
-  uploaded_file = st.file_uploader(
-      "Télécharger le document (PDF, Image)", type=["pdf", "png", "jpg"]
-  )
-
-  if uploaded_file is not None:
-    if st.button("Enregistrer le document"):
-      st.success(
-          f"Document '{uploaded_file.name}' enregistré pour {selected_logement}"
-          " (Stockage local simulé)."
-      )
-
-  st.divider()
-  st.subheader("Documents archivés (Exemple)")
-  st.write(f"Aucun document répertorié pour l'instant pour {selected_logement}.")
-
-# ==========================================
-# 5. AGENDA
-# ==========================================
-elif menu == "Agenda":
-  st.title("📅 Agenda des Événements")
-
-  with st.form("form_agenda"):
-    col1, col2 = st.columns(2)
-    with col1:
-      date_ev = st.date_input("Date de l'événement")
-      logement = st.selectbox("Logement", st.session_state.logements)
-    with col2:
-      type_ev = st.selectbox(
-          "Type",
-          [
-              "Visite / État des lieux",
-              "Fin de bail",
-              "Intervention artisan",
-              "Autre",
-          ],
-      )
-      titre_ev = st.text_input("Intitulé")
-
-    submitted_ag = st.form_submit_button("Ajouter à l'agenda")
-    if submitted_ag:
-      new_ag = pd.DataFrame({
-          "Date": [str(date_ev)],
-          "Logement": [logement],
-          "Événement": [titre_ev],
-          "Type": [type_ev],
-      })
-      st.session_state.agenda = pd.concat(
-          [st.session_state.agenda, new_ag], ignore_index=True
-      )
-      st.success("Événement ajouté.")
-
-  if not st.session_state.agenda.empty:
-    st.dataframe(
-        st.session_state.agenda.sort_values(by="Date"),
+    st.subheader("État des encaissements")
+    edited_loyers = st.data_editor(
+        st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges", col_statut]],
         use_container_width=True,
         hide_index=True,
     )
-  else:
-    st.info("Aucun événement à venir.")
+    st.session_state.loyers[col_statut] = edited_loyers[col_statut]
+
+    st.divider()
+    st.subheader("📄 Génération de Quittance de Loyer (PDF formaté)")
+
+    if len(st.session_state.logements) == 0:
+        st.warning("Aucun logement disponible. Veuillez en créer un dans l'onglet 'Gestion des Logements'.")
+    else:
+        col_q1, col_q2 = st.columns(2)
+        with col_q1:
+            selected_logement = st.selectbox(
+                "Choisir le logement", st.session_state.logements
+            )
+            locataire_info = st.session_state.loyers.loc[
+                st.session_state.loyers["Logement"] == selected_logement
+            ].iloc[0]
+            nom_locataire = st.text_input(
+                "Nom du locataire", value=locataire_info["Locataire"]
+            )
+            adresse_locataire = st.text_input(
+                "Adresse complète du locataire", value="5 Avenue du Maréchal Joffre, 31800 Saint-Gaudens"
+            )
+        with col_q2:
+            loyer_hc = st.number_input(
+                "Montant Hors Charges (€)", value=float(locataire_info["Loyer HC"])
+            )
+            charges = st.number_input(
+                "Charges (€)", value=float(locataire_info["Charges"])
+            )
+            date_paiement = st.date_input("Date effective du paiement", value=datetime.now())
+
+        st.markdown("### Informations du Bailleur (Propriétaire)")
+        b_col1, b_col2 = st.columns(2)
+        with b_col1:
+            bailleur_nom = st.text_input("Nom du bailleur", value="M. JULIEN RECHARD")
+            bailleur_adresse = st.text_input("Adresse du bailleur", value="22 RUE MARCEL PAGNOL, 31700 BLAGNAC")
+        with b_col2:
+            bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
+
+        if st.button("Générer la quittance PDF personnalisée"):
+            annee, mois = map(int, current_month.split("-"))
+            dernier_jour = calendar.monthrange(annee, mois)[1]
+            date_debut = f"01/{mois:02d}/{annee}"
+            date_fin = f"{dernier_jour:02d}/{mois:02d}/{annee}"
+            
+            noms_mois = {
+                1: "JANVIER", 2: "FEVRIER", 3: "MARS", 4: "AVRIL", 5: "MAI", 6: "JUIN",
+                7: "JUILLET", 8: "AOUT", 9: "SEPTEMBRE", 10: "OCTOBRE", 11: "NOVEMBRE", 12: "DECEMBRE"
+            }
+            titre_mois_str = f"QUITTANCE {noms_mois[mois]} {annee}"
+            total_paye = loyer_hc + charges
+            date_paiement_str = date_paiement.strftime("%d/%m/%Y")
+
+            pdf = FPDF()
+            pdf.add_page()
+            pdf.set_font("Arial", size=10)
+
+            pdf.cell(10, 5, txt="DE", ln=True)
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(0, 5, txt=bailleur_nom, ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 5, txt=bailleur_adresse, ln=True)
+            pdf.cell(0, 5, txt=bailleur_tel, ln=True)
+            pdf.ln(5)
+
+            pdf.cell(10, 5, txt="A", ln=True)
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(0, 5, txt=nom_locataire, ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 5, txt=adresse_locataire, ln=True)
+            pdf.ln(10)
+
+            pdf.set_font("Arial", size=9)
+            pdf.cell(0, 5, txt=f"Date : {date_paiement_str}", ln=True, align="R")
+            pdf.cell(0, 5, txt=f"Période : {date_debut}-{date_fin}", ln=True, align="R")
+            pdf.ln(5)
+
+            pdf.set_font("Arial", style="B", size=12)
+            pdf.cell(0, 10, txt=titre_mois_str, ln=True, align="C")
+            pdf.ln(2)
+
+            pdf.set_font("Arial", size=7)
+            pdf.multi_cell(0, 4, txt="EN CAS DE CONGE OU SI L'INTERESSE N'A PAS LA QUALITE DE LOCATAIRE LE PRESENT REÇU NE CONSTITUE PAS UNE QUITTANCE DE LOYER MAIS UN SIMPLE REÇU D'INDEMNITE D'OCCUPATION", align="C")
+            pdf.ln(8)
+
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(0, 6, txt="DÉTAILS DU TERME", ln=True)
+            pdf.set_font("Arial", size=10)
+            
+            pdf.cell(140, 6, txt="Loyer", border=0)
+            pdf.cell(50, 6, txt=f"{loyer_hc:.2f} EUR", border=0, align="R", ln=True)
+            
+            pdf.cell(140, 6, txt="Charges", border=0)
+            pdf.cell(50, 6, txt=f"{charges:.2f} EUR", border=0, align="R", ln=True)
+
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(140, 6, txt="Loyer charges comprises", border=0)
+            pdf.cell(50, 6, txt=f"{total_paye:.2f} EUR", border=0, align="R", ln=True)
+            pdf.ln(8)
+
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(0, 6, txt="LOCATAIRE", ln=True)
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 5, txt=nom_locataire, ln=True)
+            pdf.cell(0, 5, txt=f"Locataire a payé {total_paye:.2f} EUR le {date_paiement_str}", ln=True)
+            pdf.cell(0, 5, txt=f"Correspondant à la location du bien situé au {selected_logement}", ln=True)
+            pdf.cell(0, 5, txt=f"Pour la période du {date_debut} au {date_fin}", ln=True)
+            pdf.ln(8)
+
+            pdf.set_font("Arial", style="B", size=11)
+            pdf.cell(140, 8, txt="TOTAL PAYÉ", border=1)
+            pdf.cell(50, 8, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
+            pdf.ln(15)
+
+            pdf.set_font("Arial", size=10)
+            pdf.cell(0, 5, txt=bailleur_nom.replace("M. ", "").replace("MME ", ""), ln=True, align="R")
+
+            pdf_output = BytesIO(pdf.output(dest="S").encode("latin1"))
+            st.download_button(
+                label="📥 Télécharger la quittance PDF",
+                data=pdf_output,
+                file_name=f"quittance_{selected_logement}_{current_month}.pdf",
+                mime="application/pdf",
+            )
+
 
 # ==========================================
-# 6. ANNUAIRE UTILES
+# 4. TRAVAUX & SUIVI
+# ==========================================
+elif menu == "Travaux & Suivi":
+    st.title("🛠️ Suivi des Travaux et Interventions")
+    if len(st.session_state.logements) == 0:
+        st.warning("Veuillez d'abord créer un logement.")
+    else:
+        with st.form("form_travaux"):
+            col1, col2 = st.columns(2)
+            with col1:
+                logement = st.selectbox("Logement concerné", st.session_state.logements)
+                titre = st.text_input("Titre de l'intervention (ex: Fuite chauffe-eau)")
+            with col2:
+                statut = st.selectbox("Statut", ["À planifier", "En cours", "Terminé"])
+                date_travaux = st.date_input("Date")
+
+            description = st.text_area("Notes textuelles / Détails")
+            photo = st.file_uploader(
+                "Ajouter une photo justificative", type=["jpg", "png", "jpeg"]
+            )
+
+            submitted = st.form_submit_button("Ajouter l'intervention")
+            if submitted:
+                new_row = pd.DataFrame({
+                    "Logement": [logement],
+                    "Date": [str(date_travaux)],
+                    "Titre": [titre],
+                    "Description": [description],
+                    "Statut": [statut],
+                })
+                st.session_state.travaux = pd.concat(
+                    [st.session_state.travaux, new_row], ignore_index=True
+                )
+                st.success("Intervention enregistrée avec succès !")
+
+    st.subheader("Historique des travaux")
+    if not st.session_state.travaux.empty:
+        st.dataframe(
+            st.session_state.travaux, use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("Aucun travail enregistré pour le moment.")
+
+
+# ==========================================
+# 5. DOCUMENTS & ÉTATS DES LIEUX
+# ==========================================
+elif menu == "Documents & États des lieux":
+    st.title("📂 Gestion des Documents & États des Lieux")
+    if len(st.session_state.logements) == 0:
+        st.warning("Veuillez d'abord créer un logement.")
+    else:
+        selected_logement = st.selectbox(
+            "Sélectionner le logement pour voir/ajouter des pièces",
+            st.session_state.logements,
+        )
+
+        doc_type = st.selectbox(
+            "Type de document",
+            [
+                "État des lieux d'entrée",
+                "État des lieux de sortie",
+                "Bail de location",
+                "Pièce d'identité / Autre",
+            ],
+        )
+        uploaded_file = st.file_uploader(
+            "Télécharger le document (PDF, Image)", type=["pdf", "png", "jpg"]
+        )
+
+        if uploaded_file is not None:
+            if st.button("Enregistrer le document"):
+                st.success(
+                    f"Document '{uploaded_file.name}' enregistré pour {selected_logement}"
+                    " (Stockage local simulé)."
+                )
+
+        st.divider()
+        st.subheader("Documents archivés (Exemple)")
+        st.write(f"Aucun document répertorié pour l'instant pour {selected_logement}.")
+
+
+# ==========================================
+# 6. AGENDA (AVEC LIENS GOOGLE AGENDA)
+# ==========================================
+elif menu == "Agenda":
+    st.title("📅 Agenda des Événements & Google Agenda")
+    if len(st.session_state.logements) == 0:
+        st.warning("Veuillez d'abord créer un logement.")
+    else:
+        with st.form("form_agenda"):
+            col1, col2 = st.columns(2)
+            with col1:
+                date_ev = st.date_input("Date de l'événement")
+                logement = st.selectbox("Logement", st.session_state.logements)
+            with col2:
+                type_ev = st.selectbox(
+                    "Type",
+                    [
+                        "Visite / État des lieux",
+                        "Fin de bail",
+                        "Intervention artisan",
+                        "Autre",
+                    ],
+                )
+                titre_ev = st.text_input("Intitulé")
+
+            submitted_ag = st.form_submit_button("Ajouter à l'agenda")
+            if submitted_ag:
+                new_ag = pd.DataFrame({
+                    "Date": [str(date_ev)],
+                    "Logement": [logement],
+                    "Événement": [titre_ev],
+                    "Type": [type_ev],
+                })
+                st.session_state.agenda = pd.concat(
+                    [st.session_state.agenda, new_ag], ignore_index=True
+                )
+                st.success("Événement ajouté avec succès !")
+
+    if not st.session_state.agenda.empty:
+        st.subheader("Liste de vos événements")
+        
+        # Tri par date
+        agenda_df = st.session_state.agenda.sort_values(by="Date")
+        
+        for idx, row in agenda_df.iterrows():
+            with st.container():
+                c1, c2, c3 = st.columns([3, 4, 2])
+                with c1:
+                    st.markdown(f"**Date :** {row['Date']}")
+                    st.markdown(f"**Logement :** {row['Logement']}")
+                with c2:
+                    st.markdown(f"**Type :** {row['Type']}")
+                    st.markdown(f"**Intitulé :** {row['Événement']}")
+                with c3:
+                    # Génération du lien Google Agenda au format Web
+                    d = datetime.strptime(row['Date'], "%Y-%m-%d")
+                    d_end = d + timedelta(days=1)
+                    dates_fmt = f"{d.strftime('%Y%m%d')}/{d_end.strftime('%Y%m%d')}"
+                    
+                    title_enc = urllib.parse.quote(f"[{row['Type']}] {row['Événement']}")
+                    details_enc = urllib.parse.quote(f"Logement concerné : {row['Logement']}")
+                    loc_enc = urllib.parse.quote(str(row['Logement']))
+                    
+                    gcal_url = f"https://calendar.google.com/calendar/render?action=TEMPLATE&text={title_enc}&dates={dates_fmt}&details={details_enc}&location={loc_enc}"
+                    
+                    st.markdown(f"[📅 Ajouter à Google Agenda]({gcal_url})", unsafe_allow_html=True)
+                st.divider()
+    else:
+        st.info("Aucun événement à venir.")
+
+
+# ==========================================
+# 7. ANNUAIRE UTILES
 # ==========================================
 elif menu == "Annuaire utiles":
-  st.title("📇 Annuaire des Contacts Utiles")
+    st.title("📇 Annuaire des Contacts Utiles")
+    with st.form("form_contact"):
+        c1, c2 = st.columns(2)
+        with c1:
+            nom = st.text_input("Nom / Entreprise (ex: Plombier Dupont)")
+            categorie = st.selectbox(
+                "Catégorie",
+                ["Artisan / Dépanneur", "Syndic", "Assurance", "Fournisseur", "Autre"],
+            )
+        with c2:
+            tel = st.text_input("Téléphone")
+            email = st.text_input("Email")
+        notes = st.text_area("Notes / Spécificités")
 
-  with st.form("form_contact"):
-    c1, c2 = st.columns(2)
-    with c1:
-      nom = st.text_input("Nom / Entreprise (ex: Plombier Dupont)")
-      categorie = st.selectbox(
-          "Catégorie",
-          ["Artisan / Dépanneur", "Syndic", "Assurance", "Fournisseur", "Autre"],
-      )
-    with c2:
-      tel = st.text_input("Téléphone")
-      email = st.text_input("Email")
-    notes = st.text_area("Notes / Spécificités")
+        if st.form_submit_button("Ajouter le contact"):
+            new_c = pd.DataFrame({
+                "Nom": [nom],
+                "Catégorie": [categorie],
+                "Téléphone": [tel],
+                "Email": [email],
+                "Notes": [notes],
+            })
+            st.session_state.contacts = pd.concat(
+                [st.session_state.contacts, new_c], ignore_index=True
+            )
+            st.success("Contact enregistré.")
 
-    if st.form_submit_button("Ajouter le contact"):
-      new_c = pd.DataFrame({
-          "Nom": [nom],
-          "Catégorie": [categorie],
-          "Téléphone": [tel],
-          "Email": [email],
-          "Notes": [notes],
-      })
-      st.session_state.contacts = pd.concat(
-          [st.session_state.contacts, new_c], ignore_index=True
-      )
-      st.success("Contact enregistré.")
-
-  if not st.session_state.contacts.empty:
-    st.dataframe(
-        st.session_state.contacts, use_container_width=True, hide_index=True
-    )
-  else:
-    st.info("Votre annuaire est vide.")
+    if not st.session_state.contacts.empty:
+        st.dataframe(
+            st.session_state.contacts, use_container_width=True, hide_index=True
+        )
+    else:
+        st.info("Votre annuaire est vide.")
