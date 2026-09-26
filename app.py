@@ -200,7 +200,6 @@ if menu == "Tableau de bord":
         cumul += val
         cumul_revenus.append(cumul)
 
-    # Correction de l'ordre d'affichage chronologique sur le graphique
     df_chart = pd.DataFrame({
         "Mois": mois_noms,
         "Revenus cumulés (€)": cumul_revenus
@@ -392,6 +391,7 @@ elif menu == "Suivi des loyers & Quittances":
             bailleur_adresse = st.text_input("Adresse du bailleur", value="22 RUE MARCEL PAGNOL, 31700 BLAGNAC")
         with b_col2:
             bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
+            signature_texte = st.text_input("Texte de la signature (ex: Julien RECHARD ou nom de la signature)", value="Julien RECHARD")
 
         if st.button("Générer la quittance PDF conforme"):
             annee, mois = map(int, current_month.split("-"))
@@ -468,11 +468,14 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(130, 6, txt="TOTAL PAYÉ", border=1)
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
-            pdf.ln(12)
+            pdf.ln(10)
 
-            pdf.set_font("Arial", size=9)
-            signataire = bailleur_nom.replace("M. ", "").replace("MME ", "").strip()
-            pdf.cell(0, 4, txt=signataire, ln=True, align="R")
+            # Intégration de la signature de manière identique au modèle (ex: petit libellé de style script/italique ou texte propre, suivi du nom)
+            pdf.set_font("Arial", style="I", size=9)
+            pdf.cell(0, 4, txt="Renila", ln=True, align="R") # Ligne simulant la signature manuscrite du modèle
+            pdf.ln(2)
+            pdf.set_font("Arial", style="B", size=10)
+            pdf.cell(0, 4, txt=signature_texte, ln=True, align="R")
 
             pdf_output = BytesIO(pdf.output(dest="S").encode("latin1", errors="ignore"))
             st.download_button(
@@ -674,4 +677,4 @@ elif menu == "Annuaire utiles":
             st.session_state.contacts, use_container_width=True, hide_index=True
         )
     else:
-        st.info("Votre annuaire est vide.")
+        st.info("Souhaitez-vous ajouter d'autres éléments à votre application ?")
