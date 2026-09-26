@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import calendar
 import urllib.parse
+import json
 import os
 import pandas as pd
 from fpdf import FPDF
@@ -14,45 +15,88 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- INITIALISATION DES DONNÉES EN SESSION ---
-if "logements" not in st.session_state:
-    st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
+DATA_FILE = "parc_locatif_data.json"
 
-if "parc_logements" not in st.session_state:
-    st.session_state.parc_logements = pd.DataFrame({
-        "ID": [str(i) for i in range(1, 10)],
-        "Logement": st.session_state.logements,
-        "Adresse": [f"Adresse par défaut {i}" for i in range(1, 10)],
-        "Locataire": [f"Locataire {i}" for i in range(1, 10)],
-        "Loyer HC": [600 + i * 50 for i in range(9)],
-        "Charges": [50] * 9,
-        "Imposition": ["Nu"] * 9,
-    })
+def charger_donnees():
+    """Charge les données depuis le fichier JSON local si il existe."""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data
+        except Exception:
+            return None
+    return None
 
-if "loyers" not in st.session_state:
-    current_month = datetime.now().strftime("%Y-%m")
-    st.session_state.loyers = pd.DataFrame({
-        "Logement": st.session_state.logements,
-        "Locataire": st.session_state.parc_logements["Locataire"],
-        "Loyer HC": st.session_state.parc_logements["Loyer HC"],
-        "Charges": st.session_state.parc_logements["Charges"],
-        f"Statut_{current_month}": [False] * len(st.session_state.logements),
-    })
+def sauvegarder_donnees():
+    """Sauvegarde l'état actuel de la session dans le fichier JSON local."""
+    data = {
+        "logements": st.session_state.logements,
+        "parc_logements": st.session_state.parc_logements.to_dict(orient="split"),
+        "loyers": st.session_state.loyers.to_dict(orient="split"),
+        "travaux": st.session_state.travaux.to_dict(orient="split"),
+        "contacts": st.session_state.contacts.to_dict(orient="split"),
+        "agenda": st.session_state.agenda.to_dict(orient="split"),
+    }
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-if "travaux" not in st.session_state:
-    st.session_state.travaux = pd.DataFrame(
-        columns=["Logement", "Date", "Titre", "Description", "Statut"]
-    )
+# --- INITIALISATION DES DONNÉES EN SESSION AVEC PERSISTANCE ---
+saved_data = charger_donnees()
 
-if "contacts" not in st.session_state:
-    st.session_state.contacts = pd.DataFrame(
-        columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"]
-    )
+if saved_data:
+    if "logements" not in st.session_state:
+        st.session_state.logements = saved_data.get("logements", [f"Logement {i}" for i in range(1, 10)])
+    if "parc_logements" not in st.session_state:
+        st.session_state.parc_logements = pd.DataFrame(**saved_data.get("parc_logements"))
+    if "loyers" not in st.session_state:
+        st.session_state.loyers = pd.DataFrame(**saved_data.get("loyers"))
+    if "travaux" not in st.session_state:
+        st.session_state.travaux = pd.DataFrame(**saved_data.get("travaux"))
+    if "contacts" not in st.session_state:
+        st.session_state.contacts = pd.DataFrame(**saved_data.get("contacts"))
+    if "agenda" not in st.session_state:
+        st.session_state.agenda = pd.DataFrame(**saved_data.get("agenda"))
+else:
+    if "logements" not in st.session_state:
+        st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
 
-if "agenda" not in st.session_state:
-    st.session_state.agenda = pd.DataFrame(
-        columns=["Date", "Logement", "Événement", "Type"]
-    )
+    if "parc_logements" not in st.session_state:
+        st.session_state.parc_logements = pd.DataFrame({
+            "ID": [str(i) for i in range(1, 10)],
+            "Logement": st.session_state.logements,
+            "Adresse": [f"Adresse par défaut {i}" for i in range(1, 10)],
+            "Locataire": [f"Locataire {i}" for i in range(1, 10)],
+            "Loyer HC": [600 + i * 50 for i in range(9)],
+            "Charges": [50] * 9,
+            "Imposition": ["Nu"] * 9,
+        })
+
+    if "loyers" not in st.session_state:
+        current_month = datetime.now().strftime("%Y-%m")
+        st.session_state.loyers = pd.DataFrame({
+            "Logement": st.session_state.logements,
+            "Locataire": st.session_state.parc_logements["Locataire"],
+            "Loyer HC": st.session_state.parc_logements["Loyer HC"],
+            "Charges": st.session_state.parc_logements["Charges"],
+            f"Statut_{current_month}": [False] * len(st.session_state.logements),
+        })
+
+    if "travaux" not in st.session_state:
+        st.session_state.travaux = pd.DataFrame(
+            columns=["Logement", "Date", "Titre", "Description", "Statut"]
+        )
+
+    if "contacts" not in st.session_state:
+        st.session_state.contacts = pd.DataFrame(
+            columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"]
+        )
+
+    if "agenda" not in st.session_state:
+        st.session_state.agenda = pd.DataFrame(
+            columns=["Date", "Logement", "Événement", "Type"]
+        )
+    sauvegarder_donnees()
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
 st.sidebar.title("☰ Gestion Locative")
@@ -71,7 +115,7 @@ menu = st.sidebar.radio(
 
 
 # ==========================================
-# 1. TABLEAU DE BORD (AVEC GRAPHIQUE DES REVENUS)
+# 1. TABLEAU DE BORD (AVEC GRAPHIQUE CORRIGÉ)
 # ==========================================
 if menu == "Tableau de bord":
     st.title("📊 Tableau de Bord & Revenus")
@@ -109,7 +153,6 @@ if menu == "Tableau de bord":
     st.divider()
     st.subheader("📈 Graphique des revenus cumulés sur l'année")
 
-    # Filtres pour le graphique
     f_col1, f_col2, f_col3 = st.columns(3)
     
     annees_dispo = list(set([col.split("_")[1].split("-")[0] for col in st.session_state.loyers.columns if col.startswith("Statut_")]))
@@ -126,7 +169,6 @@ if menu == "Tableau de bord":
         imposition_opts = ["Tous", "Nu", "Meublé", "Airbnb"]
         imposition_sel = st.selectbox("Type de fiscalité (Imposition)", imposition_opts)
 
-    # Calcul des revenus cumulés en fonction des filtres
     mois_noms = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"]
     revenus_mensuels = []
 
@@ -158,10 +200,12 @@ if menu == "Tableau de bord":
         cumul += val
         cumul_revenus.append(cumul)
 
+    # Correction de l'ordre d'affichage chronologique sur le graphique
     df_chart = pd.DataFrame({
         "Mois": mois_noms,
         "Revenus cumulés (€)": cumul_revenus
     })
+    df_chart["Mois"] = pd.Categorical(df_chart["Mois"], categories=mois_noms, ordered=True)
     df_chart.set_index("Mois", inplace=True)
 
     st.line_chart(df_chart, use_container_width=True)
@@ -215,6 +259,7 @@ elif menu == "Gestion des Logements":
                 }])
                 st.session_state.parc_logements = pd.concat([st.session_state.parc_logements, new_parc_row], ignore_index=True)
                 
+                sauvegarder_donnees()
                 st.success(f"Le logement '{nouveau_nom}' a été créé avec succès !")
                 st.rerun()
 
@@ -229,8 +274,10 @@ elif menu == "Gestion des Logements":
         key="editor_parc_complet"
     )
 
-    st.session_state.parc_logements = edited_parc
-    st.session_state.logements = edited_parc["Logement"].tolist()
+    if not edited_parc.equals(st.session_state.parc_logements):
+        st.session_state.parc_logements = edited_parc
+        st.session_state.logements = edited_parc["Logement"].tolist()
+        sauvegarder_donnees()
 
 
 # ==========================================
@@ -258,7 +305,7 @@ elif menu == "Suivi des loyers & Quittances":
     if col_statut not in st.session_state.loyers.columns:
         st.session_state.loyers[col_statut] = False
 
-    # Synchronisation avec la gestion des logements
+    data_changed = False
     for _, row in st.session_state.parc_logements.iterrows():
         log_name = row["Logement"]
         locataire = row["Locataire"]
@@ -267,9 +314,13 @@ elif menu == "Suivi des loyers & Quittances":
         
         mask = st.session_state.loyers["Logement"] == log_name
         if mask.any():
-            st.session_state.loyers.loc[mask, "Locataire"] = locataire
-            st.session_state.loyers.loc[mask, "Loyer HC"] = loyer_hc
-            st.session_state.loyers.loc[mask, "Charges"] = charges
+            if (st.session_state.loyers.loc[mask, "Locataire"].values[0] != locataire or
+                st.session_state.loyers.loc[mask, "Loyer HC"].values[0] != loyer_hc or
+                st.session_state.loyers.loc[mask, "Charges"].values[0] != charges):
+                st.session_state.loyers.loc[mask, "Locataire"] = locataire
+                st.session_state.loyers.loc[mask, "Loyer HC"] = loyer_hc
+                st.session_state.loyers.loc[mask, "Charges"] = charges
+                data_changed = True
         else:
             new_row = {
                 "Logement": log_name,
@@ -283,10 +334,14 @@ elif menu == "Suivi des loyers & Quittances":
             if col_statut not in new_row:
                 new_row[col_statut] = False
             st.session_state.loyers = pd.concat([st.session_state.loyers, pd.DataFrame([new_row])], ignore_index=True)
+            data_changed = True
 
     st.session_state.loyers = st.session_state.loyers[
         st.session_state.loyers["Logement"].isin(st.session_state.parc_logements["Logement"])
     ].reset_index(drop=True)
+
+    if data_changed:
+        sauvegarder_donnees()
 
     st.subheader("État des encaissements")
     edited_loyers = st.data_editor(
@@ -294,7 +349,10 @@ elif menu == "Suivi des loyers & Quittances":
         use_container_width=True,
         hide_index=True,
     )
-    st.session_state.loyers[col_statut] = edited_loyers[col_statut]
+    
+    if not st.session_state.loyers[col_statut].equals(edited_loyers[col_statut]):
+        st.session_state.loyers[col_statut] = edited_loyers[col_statut]
+        sauvegarder_donnees()
 
     st.divider()
     st.subheader("📄 Génération de Quittance de Loyer (Modèle F fidèle)")
@@ -459,6 +517,7 @@ elif menu == "Travaux & Suivi":
                 st.session_state.travaux = pd.concat(
                     [st.session_state.travaux, new_row], ignore_index=True
                 )
+                sauvegarder_donnees()
                 st.success("Intervention enregistrée avec succès !")
 
     st.subheader("Historique des travaux")
@@ -544,6 +603,7 @@ elif menu == "Agenda":
                 st.session_state.agenda = pd.concat(
                     [st.session_state.agenda, new_ag], ignore_index=True
                 )
+                sauvegarder_donnees()
                 st.success("Événement ajouté avec succès !")
 
     if not st.session_state.agenda.empty:
@@ -606,6 +666,7 @@ elif menu == "Annuaire utiles":
             st.session_state.contacts = pd.concat(
                 [st.session_state.contacts, new_c], ignore_index=True
             )
+            sauvegarder_donnees()
             st.success("Contact enregistré.")
 
     if not st.session_state.contacts.empty:
