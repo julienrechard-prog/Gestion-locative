@@ -18,17 +18,6 @@ st.set_page_config(
 DATA_FILE = "parc_locatif_data.json"
 SIGNATURE_FILE = "signature.png"
 
-def charger_donnees():
-    """Charge les données depuis le fichier JSON local si il existe."""
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                return data
-        except Exception:
-            return None
-    return None
-
 def sauvegarder_donnees():
     """Sauvegarde l'état actuel de la session dans le fichier JSON local."""
     data = {
@@ -42,8 +31,21 @@ def sauvegarder_donnees():
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
+def charger_donnees():
+    """Charge les données depuis le fichier JSON local si il existe."""
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data
+        except Exception:
+            return None
+    return None
+
 # --- INITIALISATION DES DONNÉES EN SESSION AVEC PERSISTANCE ---
 saved_data = charger_donnees()
+
+date_defaut = datetime.now().strftime("%Y-%m-%d")
 
 if saved_data:
     if "logements" not in st.session_state:
@@ -59,49 +61,40 @@ if saved_data:
     if "agenda" not in st.session_state:
         st.session_state.agenda = pd.DataFrame(**saved_data.get("agenda"))
 else:
-    if "logements" not in st.session_state:
-        st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
-
-    date_defaut = datetime.now().strftime("%Y-%m-%d")
-    if "parc_logements" not in st.session_state:
-        st.session_state.parc_logements = pd.DataFrame({
-            "ID": [str(i) for i in range(1, 10)],
-            "Logement": st.session_state.logements,
-            "Adresse": [f"Adresse par défaut {i}" for i in range(1, 10)],
-            "Locataire": [f"Locataire {i}" for i in range(1, 10)],
-            "Loyer HC": [600 + i * 50 for i in range(9)],
-            "Charges": [50] * 9,
-            "Imposition": ["Nu"] * 9,
-            "Date entrée": [date_defaut] * 9,
-            "Date sortie": [""] * 9,
-            "Statut": ["Actif"] * 9,
-        })
-
-    if "loyers" not in st.session_state:
-        current_month = datetime.now().strftime("%Y-%m")
-        st.session_state.loyers = pd.DataFrame({
-            "Logement": st.session_state.logements,
-            "Locataire": st.session_state.parc_logements["Locataire"],
-            "Loyer HC": st.session_state.parc_logements["Loyer HC"],
-            "Charges": st.session_state.parc_logements["Charges"],
-            f"Statut_{current_month}": [False] * len(st.session_state.logements),
-        })
-
-    if "travaux" not in st.session_state:
-        st.session_state.travaux = pd.DataFrame(
-            columns=["Logement", "Date", "Titre", "Description", "Statut"]
-        )
-
-    if "contacts" not in st.session_state:
-        st.session_state.contacts = pd.DataFrame(
-            columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"]
-        )
-
-    if "agenda" not in st.session_state:
-        st.session_state.agenda = pd.DataFrame(
-            columns=["Date", "Logement", "Événement", "Type"]
-        )
+    st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
+    st.session_state.parc_logements = pd.DataFrame({
+        "ID": [str(i) for i in range(1, 10)],
+        "Logement": st.session_state.logements,
+        "Adresse": [f"Adresse par défaut {i}" for i in range(1, 10)],
+        "Locataire": [f"Locataire {i}" for i in range(1, 10)],
+        "Loyer HC": [600 + i * 50 for i in range(9)],
+        "Charges": [50] * 9,
+        "Imposition": ["Nu"] * 9,
+        "Date entrée": [date_defaut] * 9,
+        "Date sortie": [""] * 9,
+        "Statut": ["Actif"] * 9,
+    })
+    current_month = datetime.now().strftime("%Y-%m")
+    st.session_state.loyers = pd.DataFrame({
+        "Logement": st.session_state.logements,
+        "Locataire": st.session_state.parc_logements["Locataire"],
+        "Loyer HC": st.session_state.parc_logements["Loyer HC"],
+        "Charges": st.session_state.parc_logements["Charges"],
+        f"Statut_{current_month}": [False] * len(st.session_state.logements),
+    })
+    st.session_state.travaux = pd.DataFrame(columns=["Logement", "Date", "Titre", "Description", "Statut"])
+    st.session_state.contacts = pd.DataFrame(columns=["Nom", "Catégorie", "Téléphone", "Email", "Notes"])
+    st.session_state.agenda = pd.DataFrame(columns=["Date", "Logement", "Événement", "Type"])
     sauvegarder_donnees()
+
+# --- VÉRIFICATION ET MISE À JOUR DES COLONNES MANQUANTES ---
+for col_manquante in ["Date entrée", "Date sortie", "Statut"]:
+    if col_manquante not in st.session_state.parc_logements.columns:
+        if col_manquante == "Statut":
+            st.session_state.parc_logements[col_manquante] = "Actif"
+        else:
+            st.session_state.parc_logements[col_manquante] = ""
+sauvegarder_donnees()
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
 st.sidebar.title("☰ Gestion Locative")
@@ -120,7 +113,7 @@ menu = st.sidebar.radio(
 
 
 # ==========================================
-# 1. TABLEAU DE BORD (AVEC COLONNE DE DURÉE DE LOCATION)
+# 1. TABLEAU DE BORD
 # ==========================================
 if menu == "Tableau de bord":
     st.title("📊 Tableau de Bord & Revenus")
@@ -217,7 +210,6 @@ if menu == "Tableau de bord":
     st.divider()
     st.subheader("Vue rapide du parc locatif")
     
-    # Création d'une copie pour calculer dynamiquement la colonne de durée de location
     df_vue_rapide = st.session_state.parc_logements.copy()
     durees = []
     
@@ -232,7 +224,7 @@ if menu == "Tableau de bord":
             d_entree = None
             
         try:
-            d_sortie = datetime.strptime(d_sortie_str, "%Y-%m-%d").date() if d_sortie_str and d_sortie_str.lower() != "nan" else None
+            d_sortie = datetime.strptime(d_sortie_str, "%Y-%m-%d").date() if d_sortie_str and d_sortie_str.lower() != "nan" and d_sortie_str != "" else None
         except Exception:
             d_sortie = None
             
@@ -313,7 +305,7 @@ elif menu == "Gestion des Logements":
 
     st.divider()
     st.subheader("Liste et modification des logements existants")
-    st.info("Vous pouvez modifier directement les informations (dont les dates et le statut) dans le tableau ci-dessous.")
+    st.info("Faites défiler le tableau vers la droite pour voir et modifier les colonnes 'Date entrée', 'Date sortie' et 'Statut'.")
 
     edited_parc = st.data_editor(
         st.session_state.parc_logements,
