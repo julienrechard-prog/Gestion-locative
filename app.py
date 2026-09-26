@@ -393,12 +393,13 @@ elif menu == "Suivi des loyers & Quittances":
         with b_col2:
             bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
             
-            # Gestion du fichier de signature image
+            # Gestion du fichier de signature image avec bouton de validation explicite
             uploaded_sig = st.file_uploader("Télécharger votre image de signature (PNG/JPG)", type=["png", "jpg", "jpeg"])
             if uploaded_sig is not None:
-                with open(SIGNATURE_FILE, "wb") as f:
-                    f.write(uploaded_sig.getbuffer())
-                st.success("Signature enregistrée avec succès !")
+                if st.button("Enregistrer la signature"):
+                    with open(SIGNATURE_FILE, "wb") as f:
+                        f.write(uploaded_sig.getbuffer())
+                    st.success("Signature enregistrée avec succès !")
 
         if os.path.exists(SIGNATURE_FILE):
             st.info("✓ Image de signature active détectée pour les quittances.")
@@ -483,7 +484,6 @@ elif menu == "Suivi des loyers & Quittances":
             # Insertion de l'image de signature si elle existe
             if os.path.exists(SIGNATURE_FILE):
                 try:
-                    # Insertion de l'image alignée à droite (coordonnée X ~ 130, largeur ~ 50)
                     pdf.image(SIGNATURE_FILE, x=135, y=pdf.get_y(), w=45)
                     pdf.ln(25)
                 except Exception:
