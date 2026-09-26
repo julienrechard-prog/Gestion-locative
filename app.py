@@ -71,10 +71,10 @@ menu = st.sidebar.radio(
 
 
 # ==========================================
-# 1. TABLEAU DE BORD
+# 1. TABLEAU DE BORD (AVEC GRAPHIQUE DES REVENUS)
 # ==========================================
 if menu == "Tableau de bord":
-    st.title("📊 Tableau de Bord")
+    st.title("📊 Tableau de Bord & Revenus")
 
     total_logements = len(st.session_state.logements)
     current_month = datetime.now().strftime("%Y-%m")
@@ -105,6 +105,66 @@ if menu == "Tableau de bord":
             ]
         )
         st.metric("Travaux en cours", en_cours)
+
+    st.divider()
+    st.subheader("📈 Graphique des revenus cumulés sur l'année")
+
+    # Filtres pour le graphique
+    f_col1, f_col2, f_col3 = st.columns(3)
+    
+    annees_dispo = list(set([col.split("_")[1].split("-")[0] for col in st.session_state.loyers.columns if col.startswith("Statut_")]))
+    if not annees_dispo:
+        annees_dispo = [str(datetime.now().year)]
+    annees_dispo.sort(reverse=True)
+
+    with f_col1:
+        annee_sel = st.selectbox("Année", annees_dispo)
+    with f_col2:
+        logements_filtre_opts = ["Tous"] + st.session_state.logements
+        logement_sel = st.selectbox("Logement", logements_filtre_opts)
+    with f_col3:
+        imposition_opts = ["Tous", "Nu", "Meublé", "Airbnb"]
+        imposition_sel = st.selectbox("Type de fiscalité (Imposition)", imposition_opts)
+
+    # Calcul des revenus cumulés en fonction des filtres
+    mois_noms = ["Jan", "Fév", "Mar", "Avr", "Mai", "Juin", "Juil", "Août", "Sep", "Oct", "Nov", "Déc"]
+    revenus_mensuels = []
+
+    for m in range(1, 13):
+        mois_str = f"{annee_sel}-{m:02d}"
+        col_m = f"Statut_{mois_str}"
+        
+        total_mois = 0.0
+        for _, l_row in st.session_state.loyers.iterrows():
+            log_name = l_row["Logement"]
+            
+            if logement_sel != "Tous" and log_name != logement_sel:
+                continue
+            
+            parc_match = st.session_state.parc_logements[st.session_state.parc_logements["Logement"] == log_name]
+            if not parc_match.empty:
+                imp_val = parc_match.iloc[0]["Imposition"]
+                if imposition_sel != "Tous" and imp_val != imposition_sel:
+                    continue
+            
+            if col_m in st.session_state.loyers.columns and l_row.get(col_m, False):
+                total_mois += float(l_row["Loyer HC"]) + float(l_row["Charges"])
+        
+        revenus_mensuels.append(total_mois)
+
+    cumul_revenus = []
+    cumul = 0.0
+    for val in revenus_mensuels:
+        cumul += val
+        cumul_revenus.append(cumul)
+
+    df_chart = pd.DataFrame({
+        "Mois": mois_noms,
+        "Revenus cumulés (€)": cumul_revenus
+    })
+    df_chart.set_index("Mois", inplace=True)
+
+    st.line_chart(df_chart, use_container_width=True)
 
     st.divider()
     st.subheader("Vue rapide du parc locatif")
@@ -154,25 +214,6 @@ elif menu == "Gestion des Logements":
                     "Imposition": nouvelle_imposition,
                 }])
                 st.session_state.parc_logements = pd.concat([st.session_state.parc_logements, new_parc_row], ignore_index=True)
-
-                current_month = datetime.now().strftime("%Y-%m")
-                col_statut = f"Statut_{current_month}"
-                
-                new_loyer_row_data = {
-                    "Logement": nouveau_nom,
-                    "Locataire": nouveau_locataire,
-                    "Loyer HC": nouveau_loyer,
-                    "Charges": nouvelles_charges,
-                }
-                for col in st.session_state.loyers.columns:
-                    if col.startswith("Statut_"):
-                        new_loyer_row_data[col] = False
-
-                if col_statut not in new_loyer_row_data:
-                    new_loyer_row_data[col_statut] = False
-
-                new_loyer_df = pd.DataFrame([new_loyer_row_data])
-                st.session_state.loyers = pd.concat([st.session_state.loyers, new_loyer_df], ignore_index=True)
                 
                 st.success(f"Le logement '{nouveau_nom}' a été créé avec succès !")
                 st.rerun()
@@ -190,14 +231,6 @@ elif menu == "Gestion des Logements":
 
     st.session_state.parc_logements = edited_parc
     st.session_state.logements = edited_parc["Logement"].tolist()
-    
-    for idx, row in edited_parc.iterrows():
-        log_name = row["Logement"]
-        mask = st.session_state.loyers["Logement"] == log_name
-        if mask.any():
-            st.session_state.loyers.loc[mask, "Locataire"] = row["Locataire"]
-            st.session_state.loyers.loc[mask, "Loyer HC"] = row["Loyer HC"]
-            st.session_state.loyers.loc[mask, "Charges"] = row["Charges"]
 
 
 # ==========================================
@@ -224,6 +257,36 @@ elif menu == "Suivi des loyers & Quittances":
     col_statut = f"Statut_{current_month}"
     if col_statut not in st.session_state.loyers.columns:
         st.session_state.loyers[col_statut] = False
+
+    # Synchronisation avec la gestion des logements
+    for _, row in st.session_state.parc_logements.iterrows():
+        log_name = row["Logement"]
+        locataire = row["Locataire"]
+        loyer_hc = row["Loyer HC"]
+        charges = row["Charges"]
+        
+        mask = st.session_state.loyers["Logement"] == log_name
+        if mask.any():
+            st.session_state.loyers.loc[mask, "Locataire"] = locataire
+            st.session_state.loyers.loc[mask, "Loyer HC"] = loyer_hc
+            st.session_state.loyers.loc[mask, "Charges"] = charges
+        else:
+            new_row = {
+                "Logement": log_name,
+                "Locataire": locataire,
+                "Loyer HC": loyer_hc,
+                "Charges": charges,
+            }
+            for col in st.session_state.loyers.columns:
+                if col.startswith("Statut_"):
+                    new_row[col] = False
+            if col_statut not in new_row:
+                new_row[col_statut] = False
+            st.session_state.loyers = pd.concat([st.session_state.loyers, pd.DataFrame([new_row])], ignore_index=True)
+
+    st.session_state.loyers = st.session_state.loyers[
+        st.session_state.loyers["Logement"].isin(st.session_state.parc_logements["Logement"])
+    ].reset_index(drop=True)
 
     st.subheader("État des encaissements")
     edited_loyers = st.data_editor(
@@ -290,7 +353,6 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.add_page()
             pdf.set_font("Arial", size=10)
 
-            # DE (Bailleur)
             pdf.cell(0, 5, txt="DE", ln=True)
             pdf.set_font("Arial", style="B", size=10)
             pdf.cell(0, 5, txt=bailleur_nom, ln=True)
@@ -300,7 +362,6 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(0, 5, txt=bailleur_tel, ln=True)
             pdf.ln(5)
 
-            # A (Locataire)
             pdf.cell(0, 5, txt="A", ln=True)
             pdf.set_font("Arial", style="B", size=10)
             pdf.cell(0, 5, txt=nom_locataire, ln=True)
@@ -310,22 +371,18 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(0, 5, txt="Locataire", ln=True)
             pdf.ln(5)
 
-            # Date & Période
             pdf.cell(0, 5, txt=f"Date {date_paiement_str}", ln=True)
             pdf.cell(0, 5, txt=f"Période {date_debut}-{date_fin}", ln=True)
             pdf.ln(4)
 
-            # Titre Quittance
             pdf.set_font("Arial", style="B", size=11)
             pdf.cell(0, 8, txt=titre_mois_str, ln=True, align="C")
             pdf.ln(2)
 
-            # Mention légale conforme au modèle
             pdf.set_font("Arial", size=6)
             pdf.multi_cell(0, 3.5, txt="EN CAS DE CONGE OU SI L'INTERESSE N'A PAS LA QUALITE DE LOCATAIRE LE PRESENT REÇU NE CONSTITUE PAS UNE QUITTANCE DE LOYER MAIS UN SIMPLE REÇU D'INDEMNITE D'OCCUPATION", align="C")
             pdf.ln(6)
 
-            # Détails du terme (Utilisation de "EUR" pour éviter l'erreur d'encodage)
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(0, 5, txt="DÉTAILS DU TERME", ln=True)
             pdf.set_font("Arial", size=9)
@@ -341,7 +398,6 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(60, 5, txt=f"{total_paye:.2f} EUR", border=0, align="R", ln=True)
             pdf.ln(6)
 
-            # Bloc Locataire / Confirmation de paiement
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(0, 5, txt="LOCATAIRE", ln=True)
             pdf.set_font("Arial", size=9)
@@ -351,18 +407,15 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(0, 4, txt=f"Pour la période du {date_debut} au {date_fin}", ln=True)
             pdf.ln(6)
 
-            # Total payé encadré
             pdf.set_font("Arial", style="B", size=9)
             pdf.cell(130, 6, txt="TOTAL PAYÉ", border=1)
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(12)
 
-            # Signature
             pdf.set_font("Arial", size=9)
             signataire = bailleur_nom.replace("M. ", "").replace("MME ", "").strip()
             pdf.cell(0, 4, txt=signataire, ln=True, align="R")
 
-            # Encodage sécurisé vers latin-1 en ignorant les erreurs de caractères non gérés
             pdf_output = BytesIO(pdf.output(dest="S").encode("latin1", errors="ignore"))
             st.download_button(
                 label="📥 Télécharger la quittance PDF",
