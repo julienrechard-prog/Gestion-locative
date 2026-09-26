@@ -45,7 +45,7 @@ def sauvegarder_donnees():
 # --- INITIALISATION DES DONNÉES EN SESSION AVEC PERSISTANCE ---
 saved_data = charger_donnees()
 
-date_defaut = datetime.now().strftime("%Y-%m-%d")
+date_defaut = datetime.now().date()
 
 if saved_data:
     if "logements" not in st.session_state:
@@ -87,13 +87,19 @@ else:
     st.session_state.agenda = pd.DataFrame(columns=["Date", "Logement", "Événement", "Type"])
     sauvegarder_donnees()
 
-# S'assurer que les dates sont bien gérées au format date/string propre
-for col_manquante in ["Date entrée", "Date sortie", "Statut"]:
-    if col_manquante not in st.session_state.parc_logements.columns:
-        if col_manquante == "Statut":
-            st.session_state.parc_logements[col_manquante] = "Actif"
-        else:
-            st.session_state.parc_logements[col_manquante] = None
+# Nettoyage et conversion sécurisée des colonnes de dates
+if "Date entrée" in st.session_state.parc_logements.columns:
+    st.session_state.parc_logements["Date entrée"] = pd.to_datetime(st.session_state.parc_logements["Date entrée"], errors="coerce").dt.date.fillna(datetime.now().date())
+else:
+    st.session_state.parc_logements["Date entrée"] = datetime.now().date()
+
+if "Date sortie" in st.session_state.parc_logements.columns:
+    st.session_state.parc_logements["Date sortie"] = pd.to_datetime(st.session_state.parc_logements["Date sortie"], errors="coerce").dt.date
+else:
+    st.session_state.parc_logements["Date sortie"] = None
+
+if "Statut" not in st.session_state.parc_logements.columns:
+    st.session_state.parc_logements["Statut"] = "Actif"
 
 # --- BARRE LATÉRALE (NAVIGATION) ---
 st.sidebar.title("☰ Gestion Locative")
@@ -214,21 +220,11 @@ if menu == "Tableau de bord":
     
     date_jour = datetime.now().date()
     for _, row in df_vue_rapide.iterrows():
-        d_entree_str = str(row.get("Date entrée", "")).strip()
-        d_sortie_str = str(row.get("Date sortie", "")).strip()
+        d_entree = row.get("Date entrée")
+        d_sortie = row.get("Date sortie")
         
-        try:
-            d_entree = pd.to_datetime(d_entree_str).date() if d_entree_str and d_entree_str.lower() != "nan" else None
-        except Exception:
-            d_entree = None
-            
-        try:
-            d_sortie = pd.to_datetime(d_sortie_str).date() if d_sortie_str and d_sortie_str.lower() != "nan" and d_sortie_str != "" and d_sortie_str.lower() != "nat" else None
-        except Exception:
-            d_sortie = None
-            
-        if d_entree:
-            if d_sortie:
+        if pd.notna(d_entree):
+            if pd.notna(d_sortie):
                 delta = (d_sortie - d_entree).days
                 durees.append(f"{max(0, delta)} jours (Terminée)")
             else:
@@ -281,8 +277,8 @@ elif menu == "Gestion des Logements":
             else:
                 st.session_state.logements.append(nouveau_nom)
 
-                d_sortie_str = str(date_sortie) if has_sortie and date_sortie else None
-                statut_val = "Inactif" if d_sortie_str else "Actif"
+                d_sortie_val = date_sortie if has_sortie and date_sortie else None
+                statut_val = "Inactif" if d_sortie_val else "Actif"
 
                 new_parc_row = pd.DataFrame([{
                     "ID": nouveau_id,
@@ -292,8 +288,8 @@ elif menu == "Gestion des Logements":
                     "Loyer HC": nouveau_loyer,
                     "Charges": nouvelles_charges,
                     "Imposition": nouvelle_imposition,
-                    "Date entrée": str(date_entree),
-                    "Date sortie": d_sortie_str,
+                    "Date entrée": date_entree,
+                    "Date sortie": d_sortie_val,
                     "Statut": statut_val,
                 }])
                 st.session_state.parc_logements = pd.concat([st.session_state.parc_logements, new_parc_row], ignore_index=True)
@@ -306,7 +302,6 @@ elif menu == "Gestion des Logements":
     st.subheader("Liste et modification des logements existants")
     st.info("Cliquez sur les colonnes de dates pour ouvrir le calendrier interactif et modifier les informations directement.")
 
-    # Utilisation de st.column_config.DateColumn pour afficher un vrai calendrier interactif dans le tableau
     edited_parc = st.data_editor(
         st.session_state.parc_logements,
         use_container_width=True,
@@ -323,14 +318,14 @@ elif menu == "Gestion des Logements":
             d_sortie = row.get("Date sortie")
             if pd.notna(d_sortie) and str(d_sortie).strip() != "" and str(d_sortie).lower() != "nat":
                 edited_parc.loc[idx, "Statut"] = "Inactif"
-                edited_parc.loc[idx, "Date sortie"] = str(pd.to_datetime(d_sortie).date())
+                edited_parc.loc[idx, "Date sortie"] = pd.to_datetime(d_sortie).date()
             else:
                 edited_parc.loc[idx, "Statut"] = "Actif"
                 edited_parc.loc[idx, "Date sortie"] = None
 
             d_entree = row.get("Date entrée")
             if pd.notna(d_entree):
-                edited_parc.loc[idx, "Date entrée"] = str(pd.to_datetime(d_entree).date())
+                edited_parc.loc[idx, "Date entrée"] = pd.to_datetime(d_entree).date()
 
         st.session_state.parc_logements = edited_parc
         st.session_state.logements = edited_parc["Logement"].tolist()
