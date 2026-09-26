@@ -6,6 +6,7 @@ import json
 import os
 import pandas as pd
 from fpdf import FPDF
+from PIL import Image
 import streamlit as st
 
 # --- CONFIGURATION DE LA PAGE ---
@@ -93,7 +94,6 @@ else:
     st.session_state.agenda = pd.DataFrame(columns=["Date", "Logement", "Événement", "Type"])
     sauvegarder_donnees()
 
-# Nettoyage et conversion sécurisée des colonnes de dates pour l'affichage
 if "Date entrée" in st.session_state.parc_logements.columns:
     st.session_state.parc_logements["Date entrée"] = pd.to_datetime(st.session_state.parc_logements["Date entrée"], errors="coerce").dt.date.fillna(datetime.now().date())
 else:
@@ -487,9 +487,13 @@ elif menu == "Suivi des loyers & Quittances":
             uploaded_sig = st.file_uploader("Télécharger votre image de signature (PNG/JPG)", type=["png", "jpg", "jpeg"])
             if uploaded_sig is not None:
                 if st.button("Enregistrer la signature"):
-                    with open(SIGNATURE_FILE, "wb") as f:
-                        f.write(uploaded_sig.getbuffer())
-                    st.success("Signature enregistrée avec succès !")
+                    try:
+                        # Conversion automatique et nettoyage de l'image en PNG standard pour FPDF
+                        img = Image.open(uploaded_sig).convert("RGB")
+                        img.save(SIGNATURE_FILE, "PNG")
+                        st.success("Signature enregistrée et convertie avec succès !")
+                    except Exception as e:
+                        st.error(fErreur lors du traitement de l'image : {e}")
 
         if os.path.exists(SIGNATURE_FILE):
             st.info("✓ Image de signature active détectée pour les quittances.")
@@ -571,17 +575,16 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(8)
 
-            # Intégration corrigée de l'image de signature dans le PDF
+            # Intégration forcée de l'image de signature
             if os.path.exists(SIGNATURE_FILE):
                 try:
-                    # On place l'image proprement à droite sur la page en vérifiant l'espace
                     y_position = pdf.get_y()
-                    if y_position > 250:  # Si on est trop bas sur la page, on ajoute une page
+                    if y_position > 240:
                         pdf.add_page()
                         y_position = pdf.get_y()
                     pdf.image(SIGNATURE_FILE, x=130, y=y_position, w=50)
-                    pdf.ln(22)
-                except Exception:
+                    pdf.ln(25)
+                except Exception as e:
                     pdf.set_font("Arial", style="B", size=10)
                     pdf.cell(0, 4, txt="Julien RECHARD", ln=True, align="R")
             else:
