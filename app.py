@@ -488,12 +488,11 @@ elif menu == "Suivi des loyers & Quittances":
             if uploaded_sig is not None:
                 if st.button("Enregistrer la signature"):
                     try:
-                        # Conversion automatique et nettoyage de l'image en PNG standard pour FPDF
                         img = Image.open(uploaded_sig).convert("RGB")
                         img.save(SIGNATURE_FILE, "PNG")
                         st.success("Signature enregistrée et convertie avec succès !")
                     except Exception as e:
-                        st.error(fErreur lors du traitement de l'image : {e}")
+                        st.error(f"Erreur lors du traitement de l'image : {e}")
 
         if os.path.exists(SIGNATURE_FILE):
             st.info("✓ Image de signature active détectée pour les quittances.")
@@ -575,7 +574,6 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(8)
 
-            # Intégration forcée de l'image de signature
             if os.path.exists(SIGNATURE_FILE):
                 try:
                     y_position = pdf.get_y()
@@ -584,7 +582,7 @@ elif menu == "Suivi des loyers & Quittances":
                         y_position = pdf.get_y()
                     pdf.image(SIGNATURE_FILE, x=130, y=y_position, w=50)
                     pdf.ln(25)
-                except Exception as e:
+                except Exception:
                     pdf.set_font("Arial", style="B", size=10)
                     pdf.cell(0, 4, txt="Julien RECHARD", ln=True, align="R")
             else:
