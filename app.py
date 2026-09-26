@@ -342,16 +342,13 @@ elif menu == "Gestion des Logements":
     if len(st.session_state.logements) > 0:
         logement_a_supprimer = st.selectbox("Sélectionner le logement à supprimer", st.session_state.logements, key="select_suppr_logement")
         if st.button("Supprimer ce logement"):
-            # Supprimer du DataFrame du parc
             st.session_state.parc_logements = st.session_state.parc_logements[
                 st.session_state.parc_logements["Logement"] != logement_a_supprimer
             ].reset_index(drop=True)
             
-            # Supprimer de la liste globale des logements
             if logement_a_supprimer in st.session_state.logements:
                 st.session_state.logements.remove(logement_a_supprimer)
                 
-            # Supprimer également du tableau des loyers si présent
             if "Logement" in st.session_state.loyers.columns:
                 st.session_state.loyers = st.session_state.loyers[
                     st.session_state.loyers["Logement"] != logement_a_supprimer
@@ -574,10 +571,16 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(8)
 
+            # Intégration corrigée de l'image de signature dans le PDF
             if os.path.exists(SIGNATURE_FILE):
                 try:
-                    pdf.image(SIGNATURE_FILE, x=135, y=pdf.get_y(), w=45)
-                    pdf.ln(25)
+                    # On place l'image proprement à droite sur la page en vérifiant l'espace
+                    y_position = pdf.get_y()
+                    if y_position > 250:  # Si on est trop bas sur la page, on ajoute une page
+                        pdf.add_page()
+                        y_position = pdf.get_y()
+                    pdf.image(SIGNATURE_FILE, x=130, y=y_position, w=50)
+                    pdf.ln(22)
                 except Exception:
                     pdf.set_font("Arial", style="B", size=10)
                     pdf.cell(0, 4, txt="Julien RECHARD", ln=True, align="R")
