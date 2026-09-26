@@ -62,6 +62,7 @@ else:
     if "logements" not in st.session_state:
         st.session_state.logements = [f"Logement {i}" for i in range(1, 10)]
 
+    date_defaut = datetime.now().strftime("%Y-%m-%d")
     if "parc_logements" not in st.session_state:
         st.session_state.parc_logements = pd.DataFrame({
             "ID": [str(i) for i in range(1, 10)],
@@ -71,6 +72,9 @@ else:
             "Loyer HC": [600 + i * 50 for i in range(9)],
             "Charges": [50] * 9,
             "Imposition": ["Nu"] * 9,
+            "Date entrée": [date_defaut] * 9,
+            "Date sortie": [""] * 9,
+            "Statut": ["Actif"] * 9,
         })
 
     if "loyers" not in st.session_state:
@@ -116,7 +120,7 @@ menu = st.sidebar.radio(
 
 
 # ==========================================
-# 1. TABLEAU DE BORD (AVEC GRAPHIQUE CORRIGÉ)
+# 1. TABLEAU DE BORD (AVEC COLONNE DE DURÉE DE LOCATION)
 # ==========================================
 if menu == "Tableau de bord":
     st.title("📊 Tableau de Bord & Revenus")
@@ -212,8 +216,40 @@ if menu == "Tableau de bord":
 
     st.divider()
     st.subheader("Vue rapide du parc locatif")
+    
+    # Création d'une copie pour calculer dynamiquement la colonne de durée de location
+    df_vue_rapide = st.session_state.parc_logements.copy()
+    durees = []
+    
+    date_jour = datetime.now().date()
+    for _, row in df_vue_rapide.iterrows():
+        d_entree_str = str(row.get("Date entrée", "")).strip()
+        d_sortie_str = str(row.get("Date sortie", "")).strip()
+        
+        try:
+            d_entree = datetime.strptime(d_entree_str, "%Y-%m-%d").date()
+        except Exception:
+            d_entree = None
+            
+        try:
+            d_sortie = datetime.strptime(d_sortie_str, "%Y-%m-%d").date() if d_sortie_str and d_sortie_str.lower() != "nan" else None
+        except Exception:
+            d_sortie = None
+            
+        if d_entree:
+            if d_sortie:
+                delta = (d_sortie - d_entree).days
+                durees.append(f"{max(0, delta)} jours (Terminée)")
+            else:
+                delta = (date_jour - d_entree).days
+                durees.append(f"{max(0, delta)} jours (En cours)")
+        else:
+            durees.append("N/C")
+            
+    df_vue_rapide["Durée de location (jours)"] = durees
+
     st.dataframe(
-        st.session_state.parc_logements, use_container_width=True, hide_index=True
+        df_vue_rapide, use_container_width=True, hide_index=True
     )
 
 
@@ -229,6 +265,7 @@ elif menu == "Gestion des Logements":
         with col1:
             nouveau_id = st.text_input("ID du logement (ex: L01)")
             nouveau_nom = st.text_input("Nom personnalisé (ex: T2 1er étage)")
+            nouvelle_imposition = st.selectbox("Imposition", ["Nu", "Meublé", "Airbnb"])
         with col2:
             nouvelle_adresse = st.text_input("Adresse du logement (ex: 5 Avenue du Maréchal Joffre, 31800 Saint-Gaudens)")
             nouveau_locataire = st.text_input("Nom du locataire (ex: Mlle Andrea Ballester)")
@@ -236,7 +273,12 @@ elif menu == "Gestion des Logements":
             nouveau_loyer = st.number_input("Montant Loyer HC (€)", min_value=0.0, value=440.0, step=10.0)
             nouvelles_charges = st.number_input("Montant Charges (€)", min_value=0.0, value=10.0, step=5.0)
 
-        nouvelle_imposition = st.selectbox("Imposition", ["Nu", "Meublé", "Airbnb"])
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            date_entree = st.date_input("Date d'entrée dans les lieux", value=datetime.now())
+        with col_d2:
+            has_sortie = st.checkbox("Définir une date de sortie (fin de location)")
+            date_sortie = st.date_input("Date de sortie", value=datetime.now()) if has_sortie else None
 
         submit_logement = st.form_submit_button("Créer et ajouter au parc")
 
@@ -248,6 +290,9 @@ elif menu == "Gestion des Logements":
             else:
                 st.session_state.logements.append(nouveau_nom)
 
+                d_sortie_str = str(date_sortie) if has_sortie and date_sortie else ""
+                statut_val = "Inactif" if d_sortie_str else "Actif"
+
                 new_parc_row = pd.DataFrame([{
                     "ID": nouveau_id,
                     "Logement": nouveau_nom,
@@ -256,6 +301,9 @@ elif menu == "Gestion des Logements":
                     "Loyer HC": nouveau_loyer,
                     "Charges": nouvelles_charges,
                     "Imposition": nouvelle_imposition,
+                    "Date entrée": str(date_entree),
+                    "Date sortie": d_sortie_str,
+                    "Statut": statut_val,
                 }])
                 st.session_state.parc_logements = pd.concat([st.session_state.parc_logements, new_parc_row], ignore_index=True)
                 
@@ -265,7 +313,7 @@ elif menu == "Gestion des Logements":
 
     st.divider()
     st.subheader("Liste et modification des logements existants")
-    st.info("Vous pouvez modifier directement les informations dans le tableau ci-dessous.")
+    st.info("Vous pouvez modifier directement les informations (dont les dates et le statut) dans le tableau ci-dessous.")
 
     edited_parc = st.data_editor(
         st.session_state.parc_logements,
@@ -275,6 +323,14 @@ elif menu == "Gestion des Logements":
     )
 
     if not edited_parc.equals(st.session_state.parc_logements):
+        for idx, row in edited_parc.iterrows():
+            d_sortie = str(row.get("Date sortie", "")).strip()
+            if d_sortie and d_sortie.lower() != "nan" and d_sortie != "":
+                edited_parc.loc[idx, "Statut"] = "Inactif"
+            else:
+                edited_parc.loc[idx, "Statut"] = "Actif"
+                edited_parc.loc[idx, "Date sortie"] = ""
+
         st.session_state.parc_logements = edited_parc
         st.session_state.logements = edited_parc["Logement"].tolist()
         sauvegarder_donnees()
@@ -305,8 +361,15 @@ elif menu == "Suivi des loyers & Quittances":
     if col_statut not in st.session_state.loyers.columns:
         st.session_state.loyers[col_statut] = False
 
+    parc_actifs = st.session_state.parc_logements[
+        (st.session_state.parc_logements["Statut"] == "Actif") | 
+        (st.session_state.parc_logements["Statut"].isna()) | 
+        (st.session_state.parc_logements["Statut"] == "")
+    ]
+    logements_actifs_noms = parc_actifs["Logement"].tolist()
+
     data_changed = False
-    for _, row in st.session_state.parc_logements.iterrows():
+    for _, row in parc_actifs.iterrows():
         log_name = row["Logement"]
         locataire = row["Locataire"]
         loyer_hc = row["Loyer HC"]
@@ -337,37 +400,40 @@ elif menu == "Suivi des loyers & Quittances":
             data_changed = True
 
     st.session_state.loyers = st.session_state.loyers[
-        st.session_state.loyers["Logement"].isin(st.session_state.parc_logements["Logement"])
+        st.session_state.loyers["Logement"].isin(logements_actifs_noms)
     ].reset_index(drop=True)
 
     if data_changed:
         sauvegarder_donnees()
 
-    st.subheader("État des encaissements")
-    edited_loyers = st.data_editor(
-        st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges", col_statut]],
-        use_container_width=True,
-        hide_index=True,
-    )
-    
-    if not st.session_state.loyers[col_statut].equals(edited_loyers[col_statut]):
-        st.session_state.loyers[col_statut] = edited_loyers[col_statut]
-        sauvegarder_donnees()
+    st.subheader("État des encaissements (Logements Actifs uniquement)")
+    if not st.session_state.loyers.empty:
+        edited_loyers = st.data_editor(
+            st.session_state.loyers[["Logement", "Locataire", "Loyer HC", "Charges", col_statut]],
+            use_container_width=True,
+            hide_index=True,
+        )
+        
+        if not st.session_state.loyers[col_statut].equals(edited_loyers[col_statut]):
+            st.session_state.loyers[col_statut] = edited_loyers[col_statut]
+            sauvegarder_donnees()
+    else:
+        st.info("Aucun logement actif enregistré pour le moment.")
 
     st.divider()
     st.subheader("📄 Génération de Quittance de Loyer (Modèle F fidèle)")
 
-    if len(st.session_state.logements) == 0:
-        st.warning("Aucun logement disponible. Veuillez en créer un dans l'onglet 'Gestion des Logements'.")
+    if len(logements_actifs_noms) == 0:
+        st.warning("Aucun logement actif disponible pour générer une quittance.")
     else:
         col_q1, col_q2 = st.columns(2)
         with col_q1:
             selected_logement = st.selectbox(
-                "Choisir le logement", st.session_state.logements
+                "Choisir le logement", logements_actifs_noms
             )
             
-            parc_info = st.session_state.parc_logements.loc[
-                st.session_state.parc_logements["Logement"] == selected_logement
+            parc_info = parc_actifs.loc[
+                parc_actifs["Logement"] == selected_logement
             ].iloc[0]
             
             nom_locataire = st.text_input(
@@ -393,7 +459,6 @@ elif menu == "Suivi des loyers & Quittances":
         with b_col2:
             bailleur_tel = st.text_input("Téléphone du bailleur", value="TEL +33664288912")
             
-            # Gestion du fichier de signature image avec bouton de validation explicite
             uploaded_sig = st.file_uploader("Télécharger votre image de signature (PNG/JPG)", type=["png", "jpg", "jpeg"])
             if uploaded_sig is not None:
                 if st.button("Enregistrer la signature"):
@@ -481,7 +546,6 @@ elif menu == "Suivi des loyers & Quittances":
             pdf.cell(60, 6, txt=f"{total_paye:.2f} EUR", border=1, align="R", ln=True)
             pdf.ln(8)
 
-            # Insertion de l'image de signature si elle existe
             if os.path.exists(SIGNATURE_FILE):
                 try:
                     pdf.image(SIGNATURE_FILE, x=135, y=pdf.get_y(), w=45)
